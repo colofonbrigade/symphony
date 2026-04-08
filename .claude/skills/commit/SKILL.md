@@ -17,7 +17,7 @@ description:
 
 ## Inputs
 
-- Codex session history for intent and rationale.
+- Claude Code session history for intent and rationale.
 - `git status`, `git diff`, and `git diff --staged` for actual changes.
 - Repo-specific commit conventions if documented.
 
@@ -40,8 +40,9 @@ description:
    - Summary of key changes (what changed).
    - Rationale and trade-offs (why it changed).
    - Tests or validation run (or explicit note if not run).
-9. Append a `Co-authored-by` trailer for Codex using `Codex <codex@openai.com>`
-   unless the user explicitly requests a different identity.
+9. Append a `Co-authored-by` trailer for Claude using
+   `Claude <noreply@anthropic.com>` unless the user explicitly requests a
+   different identity.
 10. Wrap body lines at 72 characters.
 11. Create the commit message with a here-doc or temp file and use
     `git commit -F <file>` so newlines are literal (avoid `-m` with `\n`).
@@ -71,5 +72,5 @@ Rationale:
 Tests:
 - <command or "not run (reason)">
 
-Co-authored-by: Codex <codex@openai.com>
+Co-authored-by: Claude <noreply@anthropic.com>
 ```
