@@ -1,6 +1,14 @@
 defmodule SymphonyElixir.AppServerTest do
   use SymphonyElixir.TestSupport
 
+  # PRE-11: This entire module exercises the Codex JSON-RPC AppServer protocol
+  # (`thread/start`, `turn/start`, `approvalPolicy`, `sandboxPolicy`, dynamic
+  # tool dispatch). PRE-6 migrated the config schema from Codex to Claude, so
+  # the underlying app_server.ex is now stubbed and slated for deletion in
+  # PRE-8 (replaced by claude/session.ex). PRE-11 will rewrite these tests
+  # against Claude Code's stream-json protocol. Skipped wholesale until then.
+  @moduletag skip: "PRE-11: rewrite for Claude Code stream-json"
+
   test "app server rejects the workspace root and paths outside workspace root" do
     test_root =
       Path.join(
