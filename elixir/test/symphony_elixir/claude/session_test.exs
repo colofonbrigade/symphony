@@ -88,11 +88,13 @@ defmodule SymphonyElixir.Claude.SessionTest do
   end
 
   describe "single-turn happy path" do
-    test "extracts session_id from system init event and emits :session_started + :turn_completed" do
+    test "captures session_id from system init event during run_turn and emits :session_started + :turn_completed" do
       with_fake_session(fn workspace, _trace_file ->
         assert {:ok, session} = Session.start_session(workspace)
-        assert is_binary(session.session_id)
-        assert session.session_id == "fake-session-uuid"
+        # session_id is nil after start_session — Claude Code does not emit
+        # any events until the first user message lands on stdin, so we
+        # capture session_id lazily during the first run_turn.
+        assert session.session_id == nil
         assert {:ok, canonical_workspace} = SymphonyElixir.PathSafety.canonicalize(workspace)
         assert session.workspace == canonical_workspace
         assert session.turn_count == 0
@@ -107,6 +109,7 @@ defmodule SymphonyElixir.Claude.SessionTest do
         assert run_result.session_id == "fake-session-uuid"
         assert run_result.turn_id == 1
         assert run_result.session.turn_count == 1
+        assert run_result.session.session_id == "fake-session-uuid"
         assert is_map(run_result.result)
         assert run_result.result["type"] == "result"
         assert run_result.result["is_error"] == false
@@ -140,6 +143,7 @@ defmodule SymphonyElixir.Claude.SessionTest do
     test "two run_turn calls reuse the same port and session_id" do
       with_fake_session(fn workspace, trace_file ->
         assert {:ok, session} = Session.start_session(workspace)
+        assert session.session_id == nil
 
         parent = self()
 
@@ -152,9 +156,10 @@ defmodule SymphonyElixir.Claude.SessionTest do
                  )
 
         assert turn_1.turn_id == 1
+        assert turn_1.session_id == "fake-session-uuid"
         updated_session = turn_1.session
         assert updated_session.turn_count == 1
-        assert updated_session.session_id == session.session_id
+        assert updated_session.session_id == "fake-session-uuid"
 
         assert {:ok, turn_2} =
                  Session.run_turn(
@@ -165,7 +170,7 @@ defmodule SymphonyElixir.Claude.SessionTest do
                  )
 
         assert turn_2.turn_id == 2
-        assert turn_2.session_id == session.session_id
+        assert turn_2.session_id == "fake-session-uuid"
         assert turn_2.session.turn_count == 2
 
         # Both turns should have emitted session_started + turn_completed
@@ -301,19 +306,22 @@ defmodule SymphonyElixir.Claude.SessionTest do
   end
 
   defp write_fake_claude!(path, trace_file, :happy) do
+    # Real Claude Code with `--print --input-format stream-json` does NOT
+    # emit any events on stdout until it receives the first user message on
+    # stdin. The system init event is emitted at the start of EACH turn,
+    # right before the assistant response. The fake binary mirrors that.
     File.write!(path, """
     #!/bin/sh
     trace_file="#{trace_file}"
     printf 'ARGV:%s\\n' "$*" >> "$trace_file"
     session_id="fake-session-uuid"
 
-    # Emit system init
-    printf '%s\\n' '{"type":"system","subtype":"init","session_id":"'"$session_id"'","cwd":"'"$PWD"'","tools":[],"mcp_servers":[],"model":"test","permissionMode":"bypassPermissions","apiKeySource":"none","claude_code_version":"test"}'
-
     turn=0
     while IFS= read -r line; do
       turn=$((turn + 1))
       printf 'STDIN:%s\\n' "$line" >> "$trace_file"
+
+      printf '%s\\n' '{"type":"system","subtype":"init","session_id":"'"$session_id"'","cwd":"'"$PWD"'","tools":[],"mcp_servers":[],"model":"test","permissionMode":"bypassPermissions","apiKeySource":"none","claude_code_version":"test"}'
 
       printf '%s\\n' '{"type":"assistant","message":{"id":"msg_'"$turn"'","model":"test","role":"assistant","type":"message","content":[{"type":"text","text":"Reply '"$turn"'"}],"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"session_id":"'"$session_id"'","uuid":"event-assistant-'"$turn"'"}'
 
@@ -333,10 +341,10 @@ defmodule SymphonyElixir.Claude.SessionTest do
     printf 'ARGV:%s\\n' "$*" >> "$trace_file"
     session_id="fake-session-uuid"
 
-    printf '%s\\n' '{"type":"system","subtype":"init","session_id":"'"$session_id"'","cwd":"'"$PWD"'","tools":[],"mcp_servers":[],"model":"test","permissionMode":"bypassPermissions","apiKeySource":"none","claude_code_version":"test"}'
-
     while IFS= read -r line; do
       printf 'STDIN:%s\\n' "$line" >> "$trace_file"
+
+      printf '%s\\n' '{"type":"system","subtype":"init","session_id":"'"$session_id"'","cwd":"'"$PWD"'","tools":[],"mcp_servers":[],"model":"test","permissionMode":"bypassPermissions","apiKeySource":"none","claude_code_version":"test"}'
 
       printf '%s\\n' '{"type":"assistant","message":{"id":"msg_err","model":"test","role":"assistant","type":"message","content":[{"type":"text","text":"oops"}],"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"session_id":"'"$session_id"'","uuid":"event-assistant-err"}'
 
@@ -355,9 +363,7 @@ defmodule SymphonyElixir.Claude.SessionTest do
     trace_file="#{trace_file}"
     printf 'ARGV:%s\\n' "$*" >> "$trace_file"
 
-    printf '%s\\n' '{"type":"system","subtype":"init","session_id":"fake-session-uuid","cwd":"'"$PWD"'","tools":[],"mcp_servers":[],"model":"test","permissionMode":"bypassPermissions","apiKeySource":"none","claude_code_version":"test"}'
-
-    # Read one stdin line then exit non-zero before emitting a result event
+    # Read one stdin line then exit non-zero before emitting any events
     IFS= read -r line
     printf 'STDIN:%s\\n' "$line" >> "$trace_file"
     exit 7

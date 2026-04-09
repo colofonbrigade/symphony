@@ -33,7 +33,7 @@ defmodule SymphonyElixir.Claude.Session do
 
   @type session :: %{
           port: port(),
-          session_id: String.t(),
+          session_id: String.t() | nil,
           workspace: Path.t(),
           worker_host: String.t() | nil,
           metadata: map(),
@@ -50,22 +50,21 @@ defmodule SymphonyElixir.Claude.Session do
          {:ok, port} <- start_port(expanded_workspace, worker_host) do
       base_metadata = port_metadata(port, worker_host)
 
-      case await_system_init(port) do
-        {:ok, session_id} ->
-          {:ok,
-           %{
-             port: port,
-             session_id: session_id,
-             workspace: expanded_workspace,
-             worker_host: worker_host,
-             metadata: Map.put(base_metadata, :session_id, session_id),
-             turn_count: 0
-           }}
-
-        {:error, reason} ->
-          stop_port(port)
-          {:error, reason}
-      end
+      # NOTE: Claude Code's `--print --input-format stream-json` mode does not
+      # emit any events on stdout until it receives the first user message on
+      # stdin. We used to wait for a `system` init event here, which deadlocked
+      # forever (well, until read_timeout_ms). The session_id is captured
+      # lazily by `run_turn/4` from the first system init event that arrives
+      # in the receive loop after the first user message is written.
+      {:ok,
+       %{
+         port: port,
+         session_id: nil,
+         workspace: expanded_workspace,
+         worker_host: worker_host,
+         metadata: base_metadata,
+         turn_count: 0
+       }}
     end
   end
 
@@ -73,7 +72,7 @@ defmodule SymphonyElixir.Claude.Session do
   def run_turn(
         %{
           port: port,
-          session_id: session_id,
+          session_id: existing_session_id,
           metadata: metadata,
           turn_count: turn_count
         } = session,
@@ -84,27 +83,27 @@ defmodule SymphonyElixir.Claude.Session do
     on_message = Keyword.get(opts, :on_message, &default_on_message/1)
     turn_id = turn_count + 1
 
-    Logger.info("Claude session started for #{issue_context(issue)} session_id=#{session_id} turn=#{turn_id}")
-
-    emit_message(
-      on_message,
-      :session_started,
-      %{
-        session_id: session_id,
-        turn_id: turn_id
-      },
-      metadata
-    )
-
     case send_user_message(port, prompt) do
       :ok ->
-        await_turn_completion(port, on_message, metadata, session_id, turn_id, issue)
-        |> finalize_run_turn(session, on_message, session_id, turn_id, issue)
+        initial_state = %{
+          session_id: existing_session_id,
+          session_started_emitted?: false
+        }
+
+        port
+        |> await_turn_completion(on_message, metadata, initial_state, turn_id, issue)
+        |> finalize_run_turn(session, on_message, turn_id, issue)
 
       {:error, reason} ->
-        Logger.error("Claude session failed to send user message for #{issue_context(issue)} session_id=#{session_id}: #{inspect(reason)}")
+        Logger.error("Claude session failed to send user message for #{issue_context(issue)} session_id=#{existing_session_id || "n/a"}: #{inspect(reason)}")
 
-        emit_message(on_message, :startup_failed, %{reason: reason, session_id: session_id}, metadata)
+        emit_message(
+          on_message,
+          :startup_failed,
+          %{reason: reason, session_id: existing_session_id},
+          metadata
+        )
+
         {:error, reason}
     end
   end
@@ -116,20 +115,31 @@ defmodule SymphonyElixir.Claude.Session do
 
   ## --- internal helpers --------------------------------------------------
 
-  defp finalize_run_turn({:ok, result_payload}, session, _on_message, session_id, turn_id, issue) do
-    Logger.info("Claude session completed for #{issue_context(issue)} session_id=#{session_id} turn=#{turn_id}")
+  defp finalize_run_turn({:ok, result_payload, final_state}, session, _on_message, turn_id, issue) do
+    session_id = final_state.session_id
+
+    Logger.info("Claude session completed for #{issue_context(issue)} session_id=#{session_id || "n/a"} turn=#{turn_id}")
+
+    updated_session = %{
+      session
+      | turn_count: turn_id,
+        session_id: session_id,
+        metadata: maybe_update_session_metadata(session.metadata, session_id)
+    }
 
     {:ok,
      %{
        result: result_payload,
        session_id: session_id,
        turn_id: turn_id,
-       session: %{session | turn_count: turn_id}
+       session: updated_session
      }}
   end
 
-  defp finalize_run_turn({:error, reason}, _session, on_message, session_id, turn_id, issue) do
-    Logger.warning("Claude session ended with error for #{issue_context(issue)} session_id=#{session_id} turn=#{turn_id}: #{inspect(reason)}")
+  defp finalize_run_turn({:error, reason, final_state}, session, on_message, turn_id, issue) do
+    session_id = final_state.session_id
+
+    Logger.warning("Claude session ended with error for #{issue_context(issue)} session_id=#{session_id || "n/a"} turn=#{turn_id}: #{inspect(reason)}")
 
     emit_message(
       on_message,
@@ -138,8 +148,20 @@ defmodule SymphonyElixir.Claude.Session do
       %{}
     )
 
+    # Even on error, advance turn_count and capture any session_id we learned
+    # so a follow-up retry doesn't start from a stale state.
+    _updated_session = %{
+      session
+      | turn_count: turn_id,
+        session_id: session_id,
+        metadata: maybe_update_session_metadata(session.metadata, session_id)
+    }
+
     {:error, reason}
   end
+
+  defp maybe_update_session_metadata(metadata, nil), do: metadata
+  defp maybe_update_session_metadata(metadata, session_id), do: Map.put(metadata, :session_id, session_id)
 
   defp send_user_message(port, prompt) when is_binary(prompt) do
     payload = %{
@@ -160,49 +182,34 @@ defmodule SymphonyElixir.Claude.Session do
     end
   end
 
-  defp await_system_init(port) do
-    receive_event_loop(
-      port,
-      Config.settings!().claude.read_timeout_ms,
-      "",
-      &handle_init_event/2
-    )
-  end
-
-  defp handle_init_event(
-         %{"type" => "system", "subtype" => "init", "session_id" => session_id} = _payload,
-         _raw
-       )
-       when is_binary(session_id) do
-    {:ok, session_id}
-  end
-
-  defp handle_init_event(_payload, _raw), do: :continue
-
-  defp await_turn_completion(port, on_message, metadata, session_id, turn_id, _issue) do
+  defp await_turn_completion(port, on_message, metadata, initial_state, turn_id, _issue) do
     timeout_ms = Config.settings!().claude.turn_timeout_ms
 
     receive_event_loop(
       port,
       timeout_ms,
       "",
-      &handle_turn_event(&1, &2, on_message, metadata, session_id, turn_id)
+      initial_state,
+      &handle_turn_event(&1, &2, &3, on_message, metadata, turn_id)
     )
   end
 
+  # Result event — terminal. Returns {:ok, payload, state} on success or
+  # {:error, reason, state} on a Claude-side error.
   defp handle_turn_event(
          %{"type" => "result"} = payload,
          raw,
+         state,
          on_message,
          metadata,
-         session_id,
          turn_id
        ) do
     is_error = Map.get(payload, "is_error") == true
+    state = update_session_id(state, payload)
 
     event_metadata =
       metadata
-      |> Map.put(:session_id, session_id)
+      |> put_session_id(state.session_id)
       |> Map.put(:turn_id, turn_id)
       |> maybe_put_usage(payload)
 
@@ -210,87 +217,139 @@ defmodule SymphonyElixir.Claude.Session do
       emit_message(
         on_message,
         :turn_failed,
-        %{
-          payload: payload,
-          raw: raw,
-          details: payload
-        },
+        %{payload: payload, raw: raw, details: payload},
         event_metadata
       )
 
-      reason = result_error_reason(payload)
-      {:error, {:turn_failed, reason}}
+      {:error, {:turn_failed, result_error_reason(payload)}, state}
     else
       emit_message(
         on_message,
         :turn_completed,
-        %{
-          payload: payload,
-          raw: raw,
-          details: payload
-        },
+        %{payload: payload, raw: raw, details: payload},
         event_metadata
       )
 
-      {:ok, payload}
+      {:ok, payload, state}
     end
   end
 
-  defp handle_turn_event(payload, raw, on_message, metadata, session_id, turn_id) do
+  # System init event — captures session_id (lazily, only once per session)
+  # and emits the :session_started boundary event before the receive loop
+  # continues into the assistant/result events.
+  defp handle_turn_event(
+         %{"type" => "system", "subtype" => "init"} = payload,
+         raw,
+         state,
+         on_message,
+         metadata,
+         turn_id
+       ) do
+    state = update_session_id(state, payload)
+
+    state =
+      if state.session_id && not state.session_started_emitted? do
+        emit_message(
+          on_message,
+          :session_started,
+          %{session_id: state.session_id, turn_id: turn_id},
+          put_session_id(metadata, state.session_id)
+        )
+
+        %{state | session_started_emitted?: true}
+      else
+        state
+      end
+
     event_metadata =
       metadata
-      |> Map.put(:session_id, session_id)
+      |> put_session_id(state.session_id)
       |> Map.put(:turn_id, turn_id)
       |> maybe_put_usage(payload)
 
     emit_message(
       on_message,
       :notification,
-      %{
-        payload: payload,
-        raw: raw
-      },
+      %{payload: payload, raw: raw},
       event_metadata
     )
 
-    :continue
+    {:continue, state}
   end
+
+  # Generic notification (assistant/user/rate_limit_event/etc.).
+  defp handle_turn_event(payload, raw, state, on_message, metadata, turn_id) do
+    state = update_session_id(state, payload)
+
+    event_metadata =
+      metadata
+      |> put_session_id(state.session_id)
+      |> Map.put(:turn_id, turn_id)
+      |> maybe_put_usage(payload)
+
+    emit_message(
+      on_message,
+      :notification,
+      %{payload: payload, raw: raw},
+      event_metadata
+    )
+
+    {:continue, state}
+  end
+
+  defp update_session_id(state, %{"session_id" => session_id}) when is_binary(session_id) do
+    %{state | session_id: session_id}
+  end
+
+  defp update_session_id(state, _payload), do: state
+
+  defp put_session_id(metadata, nil), do: metadata
+  defp put_session_id(metadata, session_id), do: Map.put(metadata, :session_id, session_id)
 
   ## --- generic event receive loop ----------------------------------------
 
-  defp receive_event_loop(port, timeout_ms, pending_line, handler) do
+  # Threads `state` through the receive loop. The handler receives
+  # `(payload, raw, state)` and returns one of:
+  #   {:continue, new_state}      — more events expected
+  #   {:ok, result, new_state}    — terminal success
+  #   {:error, reason, new_state} — terminal error
+  #
+  # Terminal results carry the final state so callers can capture data
+  # accumulated during the receive loop (e.g. session_id from a `system`
+  # init event).
+  defp receive_event_loop(port, timeout_ms, pending_line, state, handler) do
     receive do
       {^port, {:data, {:eol, chunk}}} ->
         complete_line = pending_line <> to_string(chunk)
-        process_line(port, timeout_ms, complete_line, handler)
+        process_line(port, timeout_ms, complete_line, state, handler)
 
       {^port, {:data, {:noeol, chunk}}} ->
-        receive_event_loop(port, timeout_ms, pending_line <> to_string(chunk), handler)
+        receive_event_loop(port, timeout_ms, pending_line <> to_string(chunk), state, handler)
 
       {^port, {:exit_status, status}} ->
-        {:error, {:port_exit, status}}
+        {:error, {:port_exit, status}, state}
     after
       timeout_ms ->
-        {:error, :turn_timeout}
+        {:error, :turn_timeout, state}
     end
   end
 
-  defp process_line(port, timeout_ms, line, handler) do
+  defp process_line(port, timeout_ms, line, state, handler) do
     case Jason.decode(line) do
       {:ok, payload} when is_map(payload) ->
-        case handler.(payload, line) do
-          {:ok, result} -> {:ok, result}
-          {:error, reason} -> {:error, reason}
-          :continue -> receive_event_loop(port, timeout_ms, "", handler)
+        case handler.(payload, line, state) do
+          {:ok, result, new_state} -> {:ok, result, new_state}
+          {:error, reason, new_state} -> {:error, reason, new_state}
+          {:continue, new_state} -> receive_event_loop(port, timeout_ms, "", new_state, handler)
         end
 
       {:ok, _other} ->
         log_non_protocol_line(line, "non-map JSON")
-        receive_event_loop(port, timeout_ms, "", handler)
+        receive_event_loop(port, timeout_ms, "", state, handler)
 
       {:error, _reason} ->
         log_non_protocol_line(line, "non-JSON output")
-        receive_event_loop(port, timeout_ms, "", handler)
+        receive_event_loop(port, timeout_ms, "", state, handler)
     end
   end
 
