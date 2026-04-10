@@ -209,20 +209,20 @@ defmodule SymphonyElixir.StatusDashboardSnapshotTest do
 
   defp turn_started_message do
     %{
-      event: :notification,
-      message: %{
-        "method" => "turn/started",
-        "params" => %{"turn" => %{"id" => "turn-1"}}
-      }
+      event: :session_started,
+      message: %{"session_id" => "459972f6-4eea-4448-9ebf-b0864a01940a"}
     }
   end
 
-  defp turn_completed_message(status) do
+  defp turn_completed_message(_status) do
     %{
-      event: :notification,
+      event: :turn_completed,
       message: %{
-        "method" => "turn/completed",
-        "params" => %{"turn" => %{"status" => status}}
+        "type" => "result",
+        "subtype" => "success",
+        "is_error" => false,
+        "usage" => %{"input_tokens" => 18, "output_tokens" => 4},
+        "total_cost_usd" => 0.0125
       }
     }
   end
@@ -231,8 +231,10 @@ defmodule SymphonyElixir.StatusDashboardSnapshotTest do
     %{
       event: :notification,
       message: %{
-        "method" => "codex/event/exec_command_begin",
-        "params" => %{"msg" => %{"command" => command}}
+        "type" => "assistant",
+        "message" => %{
+          "content" => [%{"type" => "text", "text" => command}]
+        }
       }
     }
   end
@@ -241,24 +243,24 @@ defmodule SymphonyElixir.StatusDashboardSnapshotTest do
     %{
       event: :notification,
       message: %{
-        "method" => "codex/event/agent_message_delta",
-        "params" => %{"msg" => %{"payload" => %{"delta" => delta}}}
+        "type" => "assistant",
+        "message" => %{
+          "content" => [%{"type" => "text", "text" => delta}]
+        }
       }
     }
   end
 
-  defp token_usage_message(input_tokens, output_tokens, total_tokens) do
+  defp token_usage_message(input_tokens, output_tokens, _total_tokens) do
     %{
       event: :notification,
       message: %{
-        "method" => "thread/tokenUsage/updated",
-        "params" => %{
-          "tokenUsage" => %{
-            "total" => %{
-              "inputTokens" => input_tokens,
-              "outputTokens" => output_tokens,
-              "totalTokens" => total_tokens
-            }
+        "type" => "assistant",
+        "message" => %{
+          "content" => [%{"type" => "text", "text" => "processing..."}],
+          "usage" => %{
+            "input_tokens" => input_tokens,
+            "output_tokens" => output_tokens
           }
         }
       }

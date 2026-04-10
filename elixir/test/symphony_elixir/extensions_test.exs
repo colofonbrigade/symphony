@@ -548,7 +548,7 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert html =~ "Live"
     assert html =~ "Offline"
     assert html =~ "Copy ID"
-    assert html =~ "Codex update"
+    assert html =~ "Agent update"
     refute html =~ "data-runtime-clock="
     refute html =~ "setInterval(refreshRuntimeClocks"
     refute html =~ "Refresh now"
@@ -568,13 +568,9 @@ defmodule SymphonyElixir.ExtensionsTest do
           last_agent_message: %{
             event: :notification,
             message: %{
-              payload: %{
-                "method" => "codex/event/agent_message_content_delta",
-                "params" => %{
-                  "msg" => %{
-                    "content" => "structured update"
-                  }
-                }
+              "type" => "assistant",
+              "message" => %{
+                "content" => [%{"type" => "text", "text" => "structured update"}]
               }
             }
           },
@@ -593,7 +589,7 @@ defmodule SymphonyElixir.ExtensionsTest do
     StatusDashboard.notify_update()
 
     assert_eventually(fn ->
-      render(view) =~ "agent message content streaming: structured update"
+      render(view) =~ "assistant: structured update"
     end)
   end
 

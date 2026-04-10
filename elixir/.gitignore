@@ -44,7 +44,6 @@ erl_crash.dump
 .secrets
 .credentials
 status.txt
-.codex/original-user-prompt.txt
 
 # Also ignore archive artifacts (built via "mix archive.build").
 *.ez

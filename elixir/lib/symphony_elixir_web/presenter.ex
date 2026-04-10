@@ -180,7 +180,7 @@ defmodule SymphonyElixirWeb.Presenter do
   end
 
   defp summarize_message(nil), do: nil
-  defp summarize_message(message), do: StatusDashboard.humanize_codex_message(message)
+  defp summarize_message(message), do: StatusDashboard.humanize_agent_message(message)
 
   defp due_at_iso8601(due_in_ms) when is_integer(due_in_ms) do
     DateTime.utc_now()

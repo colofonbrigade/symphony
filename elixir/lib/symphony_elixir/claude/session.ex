@@ -11,7 +11,7 @@ defmodule SymphonyElixir.Claude.Session do
   swap with minimal change in PRE-9.
 
   Events are emitted via the `:on_message` callback in a shape compatible
-  with the orchestrator's `:codex_worker_update` handler:
+  with the orchestrator's `:agent_worker_update` handler:
 
       %{
         event: :session_started | :notification | :turn_completed |
