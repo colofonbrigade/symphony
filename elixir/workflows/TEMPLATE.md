@@ -1,4 +1,8 @@
 ---
+# ${VAR} placeholders in YAML field values are expanded from environment
+# variables at workflow load time. Missing env vars produce a load error.
+# Hook command values (hooks.*) are NOT expanded at load time — the shell
+# handles ${VAR} expansion when the hook executes.
 tracker:
   kind: linear
   project_slug: "${LINEAR_PROJECT_SLUG}"

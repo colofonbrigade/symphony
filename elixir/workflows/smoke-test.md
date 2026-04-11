@@ -3,13 +3,10 @@
 #
 # This file uses ${VAR} placeholders so that the same file can be reused
 # across forks and Linear projects without committing per-environment
-# values. The placeholders inside the `hooks.*` blocks are expanded by
-# `sh -lc` at hook execution time and work today. The placeholders in
-# YAML fields (project_slug, workspace.root) are NOT expanded by
-# Symphony's workflow loader yet — see PRE-15 (env var expansion in
-# workflow files). Until PRE-15 lands, substitute the YAML field
-# placeholders manually or via a small shell wrapper before invoking
-# Symphony.
+# values. YAML field placeholders (project_slug, workspace.root) are
+# expanded by Symphony's workflow loader at load time. Hook command
+# placeholders (SMOKE_REPO_URL, SMOKE_REPO_BRANCH) are expanded by
+# `sh -lc` at hook execution time.
 #
 # Required env vars (set in your shell before starting Symphony):
 #   LINEAR_PROJECT_SLUG  Linear project slug, e.g. "testing-206961824733"

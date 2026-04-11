@@ -63,22 +63,80 @@ defmodule SymphonyElixir.Workflow do
   defp parse(content) do
     {front_matter_lines, prompt_lines} = split_front_matter(content)
 
-    case front_matter_yaml_to_map(front_matter_lines) do
-      {:ok, front_matter} ->
-        prompt = Enum.join(prompt_lines, "\n") |> String.trim()
+    with {:ok, front_matter} <- front_matter_yaml_to_map(front_matter_lines),
+         {:ok, expanded} <- expand_env_vars(front_matter) do
+      prompt = Enum.join(prompt_lines, "\n") |> String.trim()
 
-        {:ok,
-         %{
-           config: front_matter,
-           prompt: prompt,
-           prompt_template: prompt
-         }}
-
+      {:ok,
+       %{
+         config: expanded,
+         prompt: prompt,
+         prompt_template: prompt
+       }}
+    else
       {:error, :workflow_front_matter_not_a_map} ->
         {:error, :workflow_front_matter_not_a_map}
 
+      {:error, {:missing_env_var, _var_name}} = error ->
+        error
+
       {:error, reason} ->
         {:error, {:workflow_parse_error, reason}}
+    end
+  end
+
+  @hooks_keys ~w(hooks)
+
+  @doc false
+  @spec expand_env_vars(map()) :: {:ok, map()} | {:error, {:missing_env_var, String.t()}}
+  def expand_env_vars(config) when is_map(config) do
+    expand_map(config, _inside_hooks? = false)
+  end
+
+  defp expand_map(map, inside_hooks?) when is_map(map) do
+    Enum.reduce_while(map, {:ok, %{}}, fn {key, value}, {:ok, acc} ->
+      child_inside_hooks? = inside_hooks? or key in @hooks_keys
+
+      case expand_value(value, child_inside_hooks?) do
+        {:ok, expanded} -> {:cont, {:ok, Map.put(acc, key, expanded)}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp expand_value(value, true) when is_binary(value), do: {:ok, value}
+
+  defp expand_value(value, false) when is_binary(value) do
+    expand_string(value)
+  end
+
+  defp expand_value(value, inside_hooks?) when is_map(value), do: expand_map(value, inside_hooks?)
+
+  defp expand_value(values, inside_hooks?) when is_list(values) do
+    Enum.reduce_while(values, {:ok, []}, fn item, {:ok, acc} ->
+      case expand_value(item, inside_hooks?) do
+        {:ok, expanded} -> {:cont, {:ok, acc ++ [expanded]}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp expand_value(value, _inside_hooks?), do: {:ok, value}
+
+  @env_var_pattern ~r/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/
+
+  defp expand_string(value) do
+    case Regex.scan(@env_var_pattern, value) do
+      [] ->
+        {:ok, value}
+
+      matches ->
+        Enum.reduce_while(matches, {:ok, value}, fn [full_match, var_name], {:ok, acc} ->
+          case System.get_env(var_name) do
+            nil -> {:halt, {:error, {:missing_env_var, var_name}}}
+            env_value -> {:cont, {:ok, String.replace(acc, full_match, env_value)}}
+          end
+        end)
     end
   end
 

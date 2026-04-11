@@ -184,6 +184,128 @@ defmodule SymphonyElixir.CoreTest do
     assert {:error, :workflow_front_matter_not_a_map} = Workflow.load(workflow_path)
   end
 
+  describe "${VAR} expansion in workflow YAML fields" do
+    test "expands ${VAR} placeholders from environment" do
+      previous = System.get_env("SYMPHONY_TEST_SLUG")
+      on_exit(fn -> restore_env("SYMPHONY_TEST_SLUG", previous) end)
+      System.put_env("SYMPHONY_TEST_SLUG", "my-project-slug")
+
+      workflow_path = Path.join(Path.dirname(Workflow.workflow_file_path()), "ENV_EXPAND.md")
+
+      File.write!(workflow_path, """
+      ---
+      tracker:
+        kind: linear
+        project_slug: "${SYMPHONY_TEST_SLUG}"
+      ---
+      Prompt body
+      """)
+
+      assert {:ok, %{config: config}} = Workflow.load(workflow_path)
+      assert get_in(config, ["tracker", "project_slug"]) == "my-project-slug"
+    end
+
+    test "errors on missing env var" do
+      previous = System.get_env("SYMPHONY_MISSING_VAR")
+      on_exit(fn -> restore_env("SYMPHONY_MISSING_VAR", previous) end)
+      System.delete_env("SYMPHONY_MISSING_VAR")
+
+      workflow_path = Path.join(Path.dirname(Workflow.workflow_file_path()), "ENV_MISSING.md")
+
+      File.write!(workflow_path, """
+      ---
+      tracker:
+        kind: linear
+        project_slug: "${SYMPHONY_MISSING_VAR}"
+      ---
+      Prompt body
+      """)
+
+      assert {:error, {:missing_env_var, "SYMPHONY_MISSING_VAR"}} = Workflow.load(workflow_path)
+    end
+
+    test "leaves hook values unexpanded for shell-level expansion" do
+      previous = System.get_env("SYMPHONY_HOOK_VAR")
+      on_exit(fn -> restore_env("SYMPHONY_HOOK_VAR", previous) end)
+      System.put_env("SYMPHONY_HOOK_VAR", "should-not-appear")
+
+      workflow_path = Path.join(Path.dirname(Workflow.workflow_file_path()), "ENV_HOOKS.md")
+
+      File.write!(workflow_path, """
+      ---
+      hooks:
+        after_create: |
+          echo "${SYMPHONY_HOOK_VAR}"
+      ---
+      Prompt body
+      """)
+
+      assert {:ok, %{config: config}} = Workflow.load(workflow_path)
+      assert get_in(config, ["hooks", "after_create"]) =~ "${SYMPHONY_HOOK_VAR}"
+    end
+
+    test "expands multiple ${VAR} in one value and across nested fields" do
+      prev_a = System.get_env("SYMPHONY_TEST_A")
+      prev_b = System.get_env("SYMPHONY_TEST_B")
+
+      on_exit(fn ->
+        restore_env("SYMPHONY_TEST_A", prev_a)
+        restore_env("SYMPHONY_TEST_B", prev_b)
+      end)
+
+      System.put_env("SYMPHONY_TEST_A", "alpha")
+      System.put_env("SYMPHONY_TEST_B", "beta")
+
+      workflow_path = Path.join(Path.dirname(Workflow.workflow_file_path()), "ENV_MULTI.md")
+
+      File.write!(workflow_path, """
+      ---
+      tracker:
+        kind: linear
+        project_slug: "${SYMPHONY_TEST_A}-${SYMPHONY_TEST_B}"
+        endpoint: "https://${SYMPHONY_TEST_A}.example.com"
+      ---
+      Prompt body
+      """)
+
+      assert {:ok, %{config: config}} = Workflow.load(workflow_path)
+      assert get_in(config, ["tracker", "project_slug"]) == "alpha-beta"
+      assert get_in(config, ["tracker", "endpoint"]) == "https://alpha.example.com"
+    end
+
+    test "coexists with legacy $VAR resolution in tracker.api_key" do
+      prev_key = System.get_env("LINEAR_API_KEY")
+      prev_slug = System.get_env("SYMPHONY_TEST_SLUG")
+
+      on_exit(fn ->
+        restore_env("LINEAR_API_KEY", prev_key)
+        restore_env("SYMPHONY_TEST_SLUG", prev_slug)
+      end)
+
+      System.put_env("LINEAR_API_KEY", "secret-key")
+      System.put_env("SYMPHONY_TEST_SLUG", "my-project")
+
+      write_workflow_file!(Workflow.workflow_file_path(),
+        tracker_api_token: "$LINEAR_API_KEY",
+        tracker_project_slug: "${SYMPHONY_TEST_SLUG}"
+      )
+
+      settings = Config.settings!()
+      assert settings.tracker.api_key == "secret-key"
+      assert settings.tracker.project_slug == "my-project"
+    end
+
+    test "non-string values pass through unchanged" do
+      assert {:ok, expanded} = Workflow.expand_env_vars(%{"polling" => %{"interval_ms" => 5000}})
+      assert expanded == %{"polling" => %{"interval_ms" => 5000}}
+    end
+
+    test "strings without ${} pass through unchanged" do
+      assert {:ok, expanded} = Workflow.expand_env_vars(%{"tracker" => %{"kind" => "linear"}})
+      assert expanded == %{"tracker" => %{"kind" => "linear"}}
+    end
+  end
+
   test "SymphonyElixir.start_link delegates to the orchestrator" do
     write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "memory")
     Application.put_env(:symphony_elixir, :memory_tracker_issues, [])
