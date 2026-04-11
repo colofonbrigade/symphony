@@ -8,13 +8,12 @@ defmodule SymphonyElixir.LiveE2ETest do
   @moduletag timeout: 300_000
 
   @default_team_key "SYME2E"
-  @default_docker_auth_json Path.join(System.user_home!(), ".codex/auth.json")
   @docker_worker_count 2
   @docker_support_dir Path.expand("../support/live_e2e_docker", __DIR__)
   @docker_compose_file Path.join(@docker_support_dir, "docker-compose.yml")
   @result_file "LIVE_E2E_RESULT.txt"
   @live_e2e_skip_reason if(System.get_env("SYMPHONY_RUN_LIVE_E2E") != "1",
-                          do: "set SYMPHONY_RUN_LIVE_E2E=1 to enable the real Linear/Codex end-to-end test"
+                          do: "set SYMPHONY_RUN_LIVE_E2E=1 to enable the real Linear/Claude Code end-to-end test"
                         )
 
   @team_query """
@@ -323,62 +322,24 @@ defmodule SymphonyElixir.LiveE2ETest do
     project_slug=#{project_slug}
 
     Step 2:
-    You must use the `linear_graphql` tool to query the current issue by `{{ issue.id }}` and read:
-    - existing comments
-    - team workflow states
+    Use the Linear MCP tools to read the current issue by identifier `{{ issue.identifier }}`:
+    - Use `get_issue` to fetch the issue details and existing comments.
+    - Use `list_issue_statuses` to find the team's workflow states.
 
     A turn that only creates the file is incomplete. Do not stop after Step 1.
 
-    If the exact comment body below is not already present, post exactly one comment on the current issue with this exact body:
+    If the exact comment body below is not already present, use `save_comment` to post exactly
+    one comment on the current issue with this exact body:
     #{expected_comment("{{ issue.identifier }}", project_slug)}
 
-    Use these exact GraphQL operations:
-
-    ```graphql
-    query IssueContext($id: String!) {
-      issue(id: $id) {
-        comments(first: 20) {
-          nodes {
-            body
-          }
-        }
-        team {
-          states(first: 50) {
-            nodes {
-              id
-              name
-              type
-            }
-          }
-        }
-      }
-    }
-    ```
-
-    ```graphql
-    mutation AddComment($issueId: String!, $body: String!) {
-      commentCreate(input: {issueId: $issueId, body: $body}) {
-        success
-      }
-    }
-    ```
-
     Step 3:
-    Use the same issue-context query result to choose a workflow state whose `type` is `completed`.
-    Then move the current issue to that state with this exact mutation:
-
-    ```graphql
-    mutation CompleteIssue($id: String!, $stateId: String!) {
-      issueUpdate(id: $id, input: {stateId: $stateId}) {
-        success
-      }
-    }
-    ```
+    Use `list_issue_statuses` to find a workflow state whose type is `completed`.
+    Then use `save_issue` to move the current issue to that completed state.
 
     Step 4:
-    Verify all outcomes with one final `linear_graphql` query against `{{ issue.id }}`:
+    Verify all outcomes by fetching the issue again with `get_issue`:
     - the exact comment body is present
-    - the issue state type is `completed`
+    - the issue is in a completed terminal state
 
     Do not ask for approval.
     Stop only after all three conditions are true:
@@ -459,8 +420,8 @@ defmodule SymphonyElixir.LiveE2ETest do
         tracker_project_slug: "bootstrap",
         workspace_root: worker_setup.workspace_root,
         worker_ssh_hosts: worker_setup.ssh_worker_hosts,
-        codex_command: worker_setup.codex_command,
-        codex_approval_policy: "never",
+        claude_command: worker_setup.claude_command,
+        claude_permission_mode: "bypassPermissions",
         observability_enabled: false
       )
 
@@ -490,10 +451,10 @@ defmodule SymphonyElixir.LiveE2ETest do
         tracker_terminal_states: terminal_states,
         workspace_root: worker_setup.workspace_root,
         worker_ssh_hosts: worker_setup.ssh_worker_hosts,
-        codex_command: worker_setup.codex_command,
-        codex_approval_policy: "never",
-        codex_turn_timeout_ms: 600_000,
-        codex_stall_timeout_ms: 600_000,
+        claude_command: worker_setup.claude_command,
+        claude_permission_mode: "bypassPermissions",
+        claude_turn_timeout_ms: 600_000,
+        claude_stall_timeout_ms: 600_000,
         observability_enabled: false,
         prompt: live_prompt(project["slugId"])
       )
@@ -521,7 +482,7 @@ defmodule SymphonyElixir.LiveE2ETest do
   defp live_worker_setup!(:local, _run_id, test_root) when is_binary(test_root) do
     %{
       cleanup: fn -> :ok end,
-      codex_command: "codex app-server",
+      claude_command: "claude",
       ssh_worker_hosts: [],
       workspace_root: Path.join(test_root, "workspaces")
     }
@@ -559,7 +520,7 @@ defmodule SymphonyElixir.LiveE2ETest do
 
     %{
       cleanup: fn -> cleanup_remote_test_root(remote_test_root, ssh_worker_hosts) end,
-      codex_command: "codex app-server",
+      claude_command: "claude",
       ssh_worker_hosts: ssh_worker_hosts,
       workspace_root: remote_workspace_root
     }
@@ -569,7 +530,6 @@ defmodule SymphonyElixir.LiveE2ETest do
     ssh_root = Path.join(test_root, "live-docker-ssh")
     key_path = Path.join(ssh_root, "id_ed25519")
     config_path = Path.join(ssh_root, "config")
-    auth_json_path = @default_docker_auth_json
     worker_ports = reserve_tcp_ports(@docker_worker_count)
     worker_hosts = Enum.map(worker_ports, &"localhost:#{&1}")
     project_name = docker_project_name(run_id)
@@ -577,7 +537,7 @@ defmodule SymphonyElixir.LiveE2ETest do
 
     base_cleanup = fn ->
       restore_env("SYMPHONY_SSH_CONFIG", previous_ssh_config)
-      docker_compose_down(project_name, docker_compose_env(worker_ports, auth_json_path, key_path <> ".pub"))
+      docker_compose_down(project_name, docker_compose_env(worker_ports, key_path <> ".pub"))
     end
 
     result =
@@ -587,7 +547,7 @@ defmodule SymphonyElixir.LiveE2ETest do
         write_docker_ssh_config!(config_path, key_path)
         System.put_env("SYMPHONY_SSH_CONFIG", config_path)
 
-        docker_compose_up!(project_name, docker_compose_env(worker_ports, auth_json_path, key_path <> ".pub"))
+        docker_compose_up!(project_name, docker_compose_env(worker_ports, key_path <> ".pub"))
         wait_for_ssh_hosts!(worker_hosts)
         remote_test_root = Path.join(shared_remote_home!(worker_hosts), ".#{run_id}")
         remote_workspace_root = "~/.#{run_id}/workspaces"
@@ -597,7 +557,7 @@ defmodule SymphonyElixir.LiveE2ETest do
             cleanup_remote_test_root(remote_test_root, worker_hosts)
             base_cleanup.()
           end,
-          codex_command: "codex app-server",
+          claude_command: "claude",
           ssh_worker_hosts: worker_hosts,
           workspace_root: remote_workspace_root
         }
@@ -735,10 +695,10 @@ defmodule SymphonyElixir.LiveE2ETest do
     |> String.replace(~r/[^a-z0-9_-]/, "-")
   end
 
-  defp docker_compose_env(worker_ports, auth_json_path, authorized_key_path)
-       when is_list(worker_ports) and is_binary(auth_json_path) and is_binary(authorized_key_path) do
+  defp docker_compose_env(worker_ports, authorized_key_path)
+       when is_list(worker_ports) and is_binary(authorized_key_path) do
     [
-      {"SYMPHONY_LIVE_DOCKER_AUTH_JSON", auth_json_path},
+      {"ANTHROPIC_API_KEY", System.get_env("ANTHROPIC_API_KEY") || ""},
       {"SYMPHONY_LIVE_DOCKER_AUTHORIZED_KEY", authorized_key_path},
       {"SYMPHONY_LIVE_DOCKER_WORKER_1_PORT", Integer.to_string(Enum.at(worker_ports, 0))},
       {"SYMPHONY_LIVE_DOCKER_WORKER_2_PORT", Integer.to_string(Enum.at(worker_ports, 1))}
