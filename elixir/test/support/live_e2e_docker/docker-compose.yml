@@ -5,10 +5,9 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${SYMPHONY_LIVE_DOCKER_WORKER_1_PORT}:22"
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     volumes:
       - ${SYMPHONY_LIVE_DOCKER_AUTHORIZED_KEY}:/run/symphony/ssh/authorized_key.pub:ro
+      - ${SYMPHONY_LIVE_DOCKER_CLAUDE_CONFIG}:/home/worker/.claude
 
   worker2:
     build:
@@ -16,7 +15,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${SYMPHONY_LIVE_DOCKER_WORKER_2_PORT}:22"
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     volumes:
       - ${SYMPHONY_LIVE_DOCKER_AUTHORIZED_KEY}:/run/symphony/ssh/authorized_key.pub:ro
+      - ${SYMPHONY_LIVE_DOCKER_CLAUDE_CONFIG}:/home/worker/.claude

@@ -530,6 +530,7 @@ defmodule SymphonyElixir.LiveE2ETest do
     ssh_root = Path.join(test_root, "live-docker-ssh")
     key_path = Path.join(ssh_root, "id_ed25519")
     config_path = Path.join(ssh_root, "config")
+    claude_config_dir = Path.join(test_root, "live-docker-claude")
     worker_ports = reserve_tcp_ports(@docker_worker_count)
     worker_hosts = Enum.map(worker_ports, &"localhost:#{&1}")
     project_name = docker_project_name(run_id)
@@ -537,7 +538,7 @@ defmodule SymphonyElixir.LiveE2ETest do
 
     base_cleanup = fn ->
       restore_env("SYMPHONY_SSH_CONFIG", previous_ssh_config)
-      docker_compose_down(project_name, docker_compose_env(worker_ports, key_path <> ".pub"))
+      docker_compose_down(project_name, docker_compose_env(worker_ports, key_path <> ".pub", claude_config_dir))
     end
 
     result =
@@ -545,9 +546,10 @@ defmodule SymphonyElixir.LiveE2ETest do
         File.mkdir_p!(ssh_root)
         generate_ssh_keypair!(key_path)
         write_docker_ssh_config!(config_path, key_path)
+        write_docker_claude_config!(claude_config_dir)
         System.put_env("SYMPHONY_SSH_CONFIG", config_path)
 
-        docker_compose_up!(project_name, docker_compose_env(worker_ports, key_path <> ".pub"))
+        docker_compose_up!(project_name, docker_compose_env(worker_ports, key_path <> ".pub", claude_config_dir))
         wait_for_ssh_hosts!(worker_hosts)
         remote_test_root = Path.join(shared_remote_home!(worker_hosts), ".#{run_id}")
         remote_workspace_root = "~/.#{run_id}/workspaces"
@@ -677,7 +679,7 @@ defmodule SymphonyElixir.LiveE2ETest do
        when is_binary(config_path) and is_binary(key_path) do
     config_contents = """
     Host localhost 127.0.0.1
-      User root
+      User worker
       IdentityFile #{key_path}
       IdentitiesOnly yes
       StrictHostKeyChecking no
@@ -695,14 +697,37 @@ defmodule SymphonyElixir.LiveE2ETest do
     |> String.replace(~r/[^a-z0-9_-]/, "-")
   end
 
-  defp docker_compose_env(worker_ports, authorized_key_path)
-       when is_list(worker_ports) and is_binary(authorized_key_path) do
+  defp docker_compose_env(worker_ports, authorized_key_path, claude_config_dir)
+       when is_list(worker_ports) and is_binary(authorized_key_path) and is_binary(claude_config_dir) do
     [
-      {"ANTHROPIC_API_KEY", System.get_env("ANTHROPIC_API_KEY") || ""},
+      {"SYMPHONY_LIVE_DOCKER_CLAUDE_CONFIG", claude_config_dir},
       {"SYMPHONY_LIVE_DOCKER_AUTHORIZED_KEY", authorized_key_path},
       {"SYMPHONY_LIVE_DOCKER_WORKER_1_PORT", Integer.to_string(Enum.at(worker_ports, 0))},
       {"SYMPHONY_LIVE_DOCKER_WORKER_2_PORT", Integer.to_string(Enum.at(worker_ports, 1))}
     ]
+  end
+
+  defp write_docker_claude_config!(claude_config_dir) when is_binary(claude_config_dir) do
+    File.mkdir_p!(claude_config_dir)
+    credential_path = Path.join(claude_config_dir, ".credentials.json")
+    File.write!(credential_path, extract_keychain_claude_credential!())
+    File.chmod!(credential_path, 0o600)
+  end
+
+  defp extract_keychain_claude_credential! do
+    case System.cmd("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
+           stderr_to_stdout: true
+         ) do
+      {output, 0} ->
+        String.trim(output)
+
+      {output, status} ->
+        flunk("""
+        docker worker mode requires Claude Code credentials in the macOS keychain
+        (entry "Claude Code-credentials"). `security find-generic-password` exited
+        with status #{status}: #{inspect(output)}
+        """)
+    end
   end
 
   defp docker_compose_up!(project_name, env) when is_binary(project_name) and is_list(env) do

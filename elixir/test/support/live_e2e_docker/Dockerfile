@@ -9,7 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
   && rm -rf /var/lib/apt/lists/*
 
-RUN install -d -m 700 /root/.ssh /run/symphony/ssh /var/run/sshd
+RUN useradd -m -s /bin/bash worker \
+  && passwd -d worker \
+  && install -d -m 700 -o worker -g worker /home/worker/.ssh \
+  && install -d -m 700 /run/symphony/ssh /var/run/sshd
 
 RUN npm install --global @anthropic-ai/claude-code
 
