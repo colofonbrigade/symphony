@@ -2,13 +2,9 @@ defmodule SymphonyElixir.Claude.Session do
   @moduledoc """
   Long-running client for the Claude Code stream-json subprocess.
 
-  Replaces `SymphonyElixir.Codex.AppServer`. Symphony spawns one `claude`
-  process per logical session and feeds it line-delimited JSON user messages
-  on stdin, reading line-delimited JSON events from stdout until each
-  `result` event arrives.
-
-  Public API mirrors `Codex.AppServer` so callers (`AgentRunner`, tests)
-  swap with minimal change in PRE-9.
+  Symphony spawns one `claude` process per logical session and feeds it
+  line-delimited JSON user messages on stdin, reading line-delimited JSON
+  events from stdout until each `result` event arrives.
 
   Events are emitted via the `:on_message` callback in a shape compatible
   with the orchestrator's `:agent_worker_update` handler:
@@ -355,47 +351,36 @@ defmodule SymphonyElixir.Claude.Session do
 
   ## --- workspace + spawn -------------------------------------------------
 
-  # Copied from `Codex.AppServer.validate_workspace_cwd/2`. AppServer is
-  # scheduled for deletion in PRE-9; we duplicate rather than couple to it.
   defp validate_workspace_cwd(workspace, nil) when is_binary(workspace) do
-    expanded_workspace = Path.expand(workspace)
-    expanded_root = Path.expand(Config.settings!().workspace.root)
-    expanded_root_prefix = expanded_root <> "/"
+    case PathSafety.validate_workspace_in_root(workspace, Config.settings!().workspace.root) do
+      {:ok, canonical_workspace} ->
+        {:ok, canonical_workspace}
 
-    with {:ok, canonical_workspace} <- PathSafety.canonicalize(expanded_workspace),
-         {:ok, canonical_root} <- PathSafety.canonicalize(expanded_root) do
-      canonical_root_prefix = canonical_root <> "/"
+      {:error, {:workspace_equals_root, canonical_workspace, _canonical_root}} ->
+        {:error, {:invalid_workspace_cwd, :workspace_root, canonical_workspace}}
 
-      cond do
-        canonical_workspace == canonical_root ->
-          {:error, {:invalid_workspace_cwd, :workspace_root, canonical_workspace}}
+      {:error, {:symlink_escape, expanded_workspace, canonical_root}} ->
+        {:error, {:invalid_workspace_cwd, :symlink_escape, expanded_workspace, canonical_root}}
 
-        String.starts_with?(canonical_workspace <> "/", canonical_root_prefix) ->
-          {:ok, canonical_workspace}
+      {:error, {:outside_root, canonical_workspace, canonical_root}} ->
+        {:error, {:invalid_workspace_cwd, :outside_workspace_root, canonical_workspace, canonical_root}}
 
-        String.starts_with?(expanded_workspace <> "/", expanded_root_prefix) ->
-          {:error, {:invalid_workspace_cwd, :symlink_escape, expanded_workspace, canonical_root}}
-
-        true ->
-          {:error, {:invalid_workspace_cwd, :outside_workspace_root, canonical_workspace, canonical_root}}
-      end
-    else
-      {:error, {:path_canonicalize_failed, path, reason}} ->
+      {:error, {:path_unreadable, path, reason}} ->
         {:error, {:invalid_workspace_cwd, :path_unreadable, path, reason}}
     end
   end
 
   defp validate_workspace_cwd(workspace, worker_host)
        when is_binary(workspace) and is_binary(worker_host) do
-    cond do
-      String.trim(workspace) == "" ->
+    case PathSafety.validate_remote_workspace(workspace) do
+      :ok ->
+        {:ok, workspace}
+
+      {:error, :empty} ->
         {:error, {:invalid_workspace_cwd, :empty_remote_workspace, worker_host}}
 
-      String.contains?(workspace, ["\n", "\r", <<0>>]) ->
+      {:error, :invalid_characters} ->
         {:error, {:invalid_workspace_cwd, :invalid_remote_workspace, worker_host, workspace}}
-
-      true ->
-        {:ok, workspace}
     end
   end
 

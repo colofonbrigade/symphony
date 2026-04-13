@@ -8,6 +8,7 @@ defmodule SymphonyElixir.Orchestrator do
   import Bitwise, only: [<<<: 2]
 
   alias SymphonyElixir.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
+  alias SymphonyElixir.Claude.Usage
   alias SymphonyElixir.Linear.Issue
 
   @continuation_retry_delay_ms 1_000
@@ -502,8 +503,6 @@ defmodule SymphonyElixir.Orchestrator do
   defp last_activity_timestamp(running_entry) when is_map(running_entry) do
     Map.get(running_entry, :last_agent_timestamp) || Map.get(running_entry, :started_at)
   end
-
-  defp last_activity_timestamp(_running_entry), do: nil
 
   defp terminate_task(pid) when is_pid(pid) do
     case Task.Supervisor.terminate_child(SymphonyElixir.TaskSupervisor, pid) do
@@ -1370,7 +1369,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp extract_token_delta(running_entry, %{event: _, timestamp: _} = update) do
     running_entry = running_entry || %{}
-    usage = extract_token_usage(update)
+    usage = Usage.extract_usage(update)
 
     {
       compute_token_delta(
@@ -1406,8 +1405,8 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp extract_cost_delta(_running_entry, %{event: _, timestamp: _} = update) do
-    case extract_cost_usd(update) do
-      cost when is_number(cost) and cost > 0 -> cost
+    case Usage.extract_cost_usd(update) do
+      cost when cost > 0 -> cost
       _ -> 0.0
     end
   end
@@ -1415,131 +1414,35 @@ defmodule SymphonyElixir.Orchestrator do
   defp compute_token_delta(running_entry, token_key, usage, reported_key) do
     next_total = get_token_usage(usage, token_key)
     prev_reported = Map.get(running_entry, reported_key, 0)
+    delta = max(next_total - prev_reported, 0)
 
-    delta =
-      if is_integer(next_total) and next_total >= prev_reported do
-        next_total - prev_reported
-      else
-        0
-      end
-
-    %{
-      delta: max(delta, 0),
-      reported: if(is_integer(next_total), do: next_total, else: prev_reported)
-    }
+    %{delta: delta, reported: next_total}
   end
 
-  # Claude.Session emits the usage block on the metadata when an event carries
-  # one (top-level `usage` for `result` events, nested `message.usage` for
-  # `assistant` events). PRE-10 dropped the Codex JSON-RPC path traversal that
-  # used to live here in favor of just reading the already-extracted map.
-  defp extract_token_usage(update) do
-    case update[:usage] do
-      %{} = usage -> usage
-      _ -> %{}
-    end
-  end
-
-  # Extracts `total_cost_usd` from a Claude Code `result` event payload.
-  # Result events are the only ones that report cost; other event types
-  # return 0.0.
-  defp extract_cost_usd(update) do
-    cond do
-      is_number(update[:cost_usd]) ->
-        update[:cost_usd]
-
-      is_map(update[:payload]) ->
-        case Map.get(update[:payload], "total_cost_usd") || Map.get(update[:payload], :total_cost_usd) do
-          cost when is_number(cost) -> cost
-          _ -> 0.0
-        end
-
-      true ->
-        0.0
-    end
-  end
-
-  defp get_token_usage(usage, :input),
-    do:
-      payload_get(usage, [
-        "input_tokens",
-        "prompt_tokens",
-        :input_tokens,
-        :prompt_tokens,
-        :input,
-        "promptTokens",
-        :promptTokens,
-        "inputTokens",
-        :inputTokens
-      ])
-
-  defp get_token_usage(usage, :output),
-    do:
-      payload_get(usage, [
-        "output_tokens",
-        "completion_tokens",
-        :output_tokens,
-        :completion_tokens,
-        :output,
-        :completion,
-        "outputTokens",
-        :outputTokens,
-        "completionTokens",
-        :completionTokens
-      ])
+  # Claude Code's `usage` shape always uses string keys with integer values
+  # (see `Claude.Session.extract_usage/1`). Cache breakdown fields exist but
+  # are intentionally not rolled into the running totals here.
+  defp get_token_usage(usage, :input), do: read_token_count(usage, "input_tokens")
+  defp get_token_usage(usage, :output), do: read_token_count(usage, "output_tokens")
 
   defp get_token_usage(usage, :total) do
-    case payload_get(usage, [
-           "total_tokens",
-           "total",
-           :total_tokens,
-           :total,
-           "totalTokens",
-           :totalTokens
-         ]) do
-      value when is_integer(value) ->
-        value
+    # Claude Code's usage block doesn't include `total_tokens`. Compute from
+    # input + output so the running total is still meaningful.
+    get_token_usage(usage, :input) + get_token_usage(usage, :output)
+  end
 
-      _ ->
-        # Claude Code's `usage` shape doesn't include `total_tokens` — it
-        # reports `input_tokens`, `output_tokens`, and the cache breakdowns
-        # separately. Fall back to input + output so the running total is
-        # still meaningful.
-        input = get_token_usage(usage, :input) || 0
-        output = get_token_usage(usage, :output) || 0
-        input + output
+  defp read_token_count(usage, key) when is_map(usage) do
+    case Map.get(usage, key) do
+      value when is_integer(value) and value >= 0 -> value
+      _ -> 0
     end
   end
 
-  defp payload_get(payload, fields) when is_list(fields) do
-    Enum.find_value(fields, fn field -> map_integer_value(payload, field) end)
-  end
-
-  defp payload_get(payload, field), do: map_integer_value(payload, field)
-
-  defp map_integer_value(payload, field) do
-    if is_map(payload) do
-      value = Map.get(payload, field)
-      integer_like(value)
-    else
-      nil
-    end
-  end
+  defp read_token_count(_usage, _key), do: 0
 
   defp running_seconds(%DateTime{} = started_at, %DateTime{} = now) do
     max(0, DateTime.diff(now, started_at, :second))
   end
 
   defp running_seconds(_started_at, _now), do: 0
-
-  defp integer_like(value) when is_integer(value) and value >= 0, do: value
-
-  defp integer_like(value) when is_binary(value) do
-    case Integer.parse(String.trim(value)) do
-      {num, _} when num >= 0 -> num
-      _ -> nil
-    end
-  end
-
-  defp integer_like(_value), do: nil
 end

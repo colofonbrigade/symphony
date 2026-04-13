@@ -12,6 +12,7 @@ defmodule SymphonyElixir.Telemetry.Writer do
 
   require Logger
 
+  alias SymphonyElixir.Claude.Usage
   alias SymphonyElixir.Telemetry.AgentEvent
   alias SymphonyElixir.Telemetry.Repo
 
@@ -69,12 +70,11 @@ defmodule SymphonyElixir.Telemetry.Writer do
 
   defp build_attrs(issue_id, issue_identifier, %{event: :turn_completed} = update) do
     payload = Map.get(update, :payload, %{})
-    usage = Map.get(update, :usage) || Map.get(payload, "usage") || %{}
 
     {:ok,
      base_attrs(issue_id, issue_identifier, update, "turn_completed")
-     |> Map.merge(usage_attrs(usage))
-     |> Map.put(:cost_usd, extract_cost(payload))
+     |> Map.merge(usage_attrs(Usage.extract_usage(update)))
+     |> Map.put(:cost_usd, Usage.extract_cost_usd(update))
      |> Map.put(:raw_payload, encode_raw(payload))}
   end
 
@@ -124,15 +124,6 @@ defmodule SymphonyElixir.Telemetry.Writer do
       is_using_overage: Map.get(info, "isUsingOverage")
     }
   end
-
-  defp extract_cost(payload) when is_map(payload) do
-    case Map.get(payload, "total_cost_usd") do
-      n when is_number(n) -> n * 1.0
-      _ -> 0.0
-    end
-  end
-
-  defp extract_cost(_payload), do: 0.0
 
   defp integer_value(map, key) do
     case Map.get(map, key) do

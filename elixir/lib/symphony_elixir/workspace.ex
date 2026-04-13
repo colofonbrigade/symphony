@@ -356,44 +356,30 @@ defmodule SymphonyElixir.Workspace do
   end
 
   defp validate_workspace_path(workspace, nil) when is_binary(workspace) do
-    expanded_workspace = Path.expand(workspace)
-    expanded_root = Path.expand(Config.settings!().workspace.root)
-    expanded_root_prefix = expanded_root <> "/"
+    case PathSafety.validate_workspace_in_root(workspace, Config.settings!().workspace.root) do
+      {:ok, _canonical_workspace} ->
+        :ok
 
-    with {:ok, canonical_workspace} <- PathSafety.canonicalize(expanded_workspace),
-         {:ok, canonical_root} <- PathSafety.canonicalize(expanded_root) do
-      canonical_root_prefix = canonical_root <> "/"
+      {:error, {:workspace_equals_root, canonical_workspace, canonical_root}} ->
+        {:error, {:workspace_equals_root, canonical_workspace, canonical_root}}
 
-      cond do
-        canonical_workspace == canonical_root ->
-          {:error, {:workspace_equals_root, canonical_workspace, canonical_root}}
+      {:error, {:symlink_escape, expanded_workspace, canonical_root}} ->
+        {:error, {:workspace_symlink_escape, expanded_workspace, canonical_root}}
 
-        String.starts_with?(canonical_workspace <> "/", canonical_root_prefix) ->
-          :ok
+      {:error, {:outside_root, canonical_workspace, canonical_root}} ->
+        {:error, {:workspace_outside_root, canonical_workspace, canonical_root}}
 
-        String.starts_with?(expanded_workspace <> "/", expanded_root_prefix) ->
-          {:error, {:workspace_symlink_escape, expanded_workspace, canonical_root}}
-
-        true ->
-          {:error, {:workspace_outside_root, canonical_workspace, canonical_root}}
-      end
-    else
-      {:error, {:path_canonicalize_failed, path, reason}} ->
+      {:error, {:path_unreadable, path, reason}} ->
         {:error, {:workspace_path_unreadable, path, reason}}
     end
   end
 
   defp validate_workspace_path(workspace, worker_host)
        when is_binary(workspace) and is_binary(worker_host) do
-    cond do
-      String.trim(workspace) == "" ->
-        {:error, {:workspace_path_unreadable, workspace, :empty}}
-
-      String.contains?(workspace, ["\n", "\r", <<0>>]) ->
-        {:error, {:workspace_path_unreadable, workspace, :invalid_characters}}
-
-      true ->
-        :ok
+    case PathSafety.validate_remote_workspace(workspace) do
+      :ok -> :ok
+      {:error, :empty} -> {:error, {:workspace_path_unreadable, workspace, :empty}}
+      {:error, :invalid_characters} -> {:error, {:workspace_path_unreadable, workspace, :invalid_characters}}
     end
   end
 
