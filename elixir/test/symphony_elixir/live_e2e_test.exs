@@ -715,9 +715,7 @@ defmodule SymphonyElixir.LiveE2ETest do
   end
 
   defp extract_keychain_claude_credential! do
-    case System.cmd("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
-           stderr_to_stdout: true
-         ) do
+    case System.cmd("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"], stderr_to_stdout: true) do
       {output, 0} ->
         String.trim(output)
 

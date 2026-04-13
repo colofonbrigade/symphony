@@ -195,12 +195,18 @@ defmodule SymphonyElixir.Config.Schema do
       field(:dashboard_enabled, :boolean, default: true)
       field(:refresh_ms, :integer, default: 1_000)
       field(:render_interval_ms, :integer, default: 16)
+      field(:telemetry_enabled, :boolean, default: true)
+      field(:telemetry_db_path, :string, default: Path.join(System.user_home!() || System.tmp_dir!(), ".symphony/telemetry.db"))
     end
 
     @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
     def changeset(schema, attrs) do
       schema
-      |> cast(attrs, [:dashboard_enabled, :refresh_ms, :render_interval_ms], empty_values: [])
+      |> cast(
+        attrs,
+        [:dashboard_enabled, :refresh_ms, :render_interval_ms, :telemetry_enabled, :telemetry_db_path],
+        empty_values: []
+      )
       |> validate_number(:refresh_ms, greater_than: 0)
       |> validate_number(:render_interval_ms, greater_than: 0)
     end

@@ -195,6 +195,8 @@ defmodule SymphonyElixir.Orchestrator do
           |> apply_agent_token_delta(token_delta)
           |> apply_agent_cost_delta(cost_delta)
 
+        SymphonyElixir.Telemetry.record(issue_id, Map.get(running_entry, :identifier), update)
+
         notify_dashboard()
         {:noreply, %{state | running: Map.put(running, issue_id, updated_running_entry)}}
     end

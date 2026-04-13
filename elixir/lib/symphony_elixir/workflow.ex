@@ -127,16 +127,15 @@ defmodule SymphonyElixir.Workflow do
 
   defp expand_string(value) do
     case Regex.scan(@env_var_pattern, value) do
-      [] ->
-        {:ok, value}
+      [] -> {:ok, value}
+      matches -> Enum.reduce_while(matches, {:ok, value}, &substitute_match/2)
+    end
+  end
 
-      matches ->
-        Enum.reduce_while(matches, {:ok, value}, fn [full_match, var_name], {:ok, acc} ->
-          case System.get_env(var_name) do
-            nil -> {:halt, {:error, {:missing_env_var, var_name}}}
-            env_value -> {:cont, {:ok, String.replace(acc, full_match, env_value)}}
-          end
-        end)
+  defp substitute_match([full_match, var_name], {:ok, acc}) do
+    case System.get_env(var_name) do
+      nil -> {:halt, {:error, {:missing_env_var, var_name}}}
+      env_value -> {:cont, {:ok, String.replace(acc, full_match, env_value)}}
     end
   end
 

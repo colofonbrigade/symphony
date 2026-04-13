@@ -14,3 +14,16 @@ config :symphony_elixir, SymphonyElixirWeb.Endpoint,
   secret_key_base: String.duplicate("s", 64),
   check_origin: false,
   server: false
+
+config :symphony_elixir, ecto_repos: [SymphonyElixir.Telemetry.Repo]
+
+config :symphony_elixir, SymphonyElixir.Telemetry.Repo,
+  database: Path.join(System.user_home!() || System.tmp_dir!(), ".symphony/telemetry.db"),
+  journal_mode: :wal,
+  pool_size: 1
+
+if Mix.env() == :test do
+  config :symphony_elixir, SymphonyElixir.Telemetry.Repo,
+    database: ":memory:",
+    pool_size: 1
+end

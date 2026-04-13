@@ -19,24 +19,29 @@ defmodule SymphonyElixir.Application do
 
   use Application
 
+  alias SymphonyElixir.Telemetry
+
   @impl true
   def start(_type, _args) do
     :ok = SymphonyElixir.LogFile.configure()
+    :ok = Telemetry.Bootstrap.prepare()
 
     children = [
       {Phoenix.PubSub, name: SymphonyElixir.PubSub},
       {Task.Supervisor, name: SymphonyElixir.TaskSupervisor},
+      Telemetry.Repo,
+      Telemetry.Writer,
       SymphonyElixir.WorkflowStore,
       SymphonyElixir.Orchestrator,
       SymphonyElixir.HttpServer,
       SymphonyElixir.StatusDashboard
     ]
 
-    Supervisor.start_link(
-      children,
-      strategy: :one_for_one,
-      name: SymphonyElixir.Supervisor
-    )
+    with {:ok, sup} <-
+           Supervisor.start_link(children, strategy: :one_for_one, name: SymphonyElixir.Supervisor) do
+      :ok = Telemetry.Bootstrap.migrate()
+      {:ok, sup}
+    end
   end
 
   @impl true
