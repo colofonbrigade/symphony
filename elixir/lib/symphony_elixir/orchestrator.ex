@@ -8,20 +8,13 @@ defmodule SymphonyElixir.Orchestrator do
   import Bitwise, only: [<<<: 2]
 
   alias SymphonyElixir.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
-  alias SymphonyElixir.Claude.Usage
   alias SymphonyElixir.Linear.Issue
+  alias SymphonyElixir.Orchestrator.{Snapshot, TokenAccounting}
 
   @continuation_retry_delay_ms 1_000
   @failure_retry_base_ms 10_000
   # Slightly above the dashboard render interval so "checking now…" can render.
   @poll_transition_render_delay_ms 20
-  @empty_agent_totals %{
-    input_tokens: 0,
-    output_tokens: 0,
-    total_tokens: 0,
-    seconds_running: 0,
-    cost_usd: 0.0
-  }
 
   defmodule State do
     @moduledoc """
@@ -61,7 +54,7 @@ defmodule SymphonyElixir.Orchestrator do
       poll_check_in_progress: false,
       tick_timer_ref: nil,
       tick_token: nil,
-      agent_totals: @empty_agent_totals
+      agent_totals: TokenAccounting.empty_totals()
     }
 
     run_terminal_workspace_cleanup()
@@ -189,12 +182,13 @@ defmodule SymphonyElixir.Orchestrator do
         {:noreply, state}
 
       running_entry ->
-        {updated_running_entry, token_delta, cost_delta} = integrate_agent_update(running_entry, update)
+        {updated_running_entry, token_delta, cost_delta} =
+          TokenAccounting.integrate_update(running_entry, update)
 
         state =
           state
-          |> apply_agent_token_delta(token_delta)
-          |> apply_agent_cost_delta(cost_delta)
+          |> TokenAccounting.apply_agent_token_delta(token_delta)
+          |> TokenAccounting.apply_agent_cost_delta(cost_delta)
 
         SymphonyElixir.Telemetry.record(issue_id, Map.get(running_entry, :identifier), update)
 
@@ -1102,59 +1096,8 @@ defmodule SymphonyElixir.Orchestrator do
   @impl true
   def handle_call(:snapshot, _from, state) do
     state = refresh_runtime_config(state)
-    now = DateTime.utc_now()
-    now_ms = System.monotonic_time(:millisecond)
-
-    running =
-      state.running
-      |> Enum.map(fn {issue_id, metadata} ->
-        %{
-          issue_id: issue_id,
-          identifier: metadata.identifier,
-          state: metadata.issue.state,
-          worker_host: Map.get(metadata, :worker_host),
-          workspace_path: Map.get(metadata, :workspace_path),
-          session_id: metadata.session_id,
-          agent_pid: metadata.agent_pid,
-          agent_input_tokens: metadata.agent_input_tokens,
-          agent_output_tokens: metadata.agent_output_tokens,
-          agent_total_tokens: metadata.agent_total_tokens,
-          agent_cost_usd: metadata.agent_cost_usd,
-          turn_count: Map.get(metadata, :turn_count, 0),
-          started_at: metadata.started_at,
-          last_agent_timestamp: metadata.last_agent_timestamp,
-          last_agent_message: metadata.last_agent_message,
-          last_agent_event: metadata.last_agent_event,
-          rate_limit_info: Map.get(metadata, :rate_limit_info),
-          runtime_seconds: running_seconds(metadata.started_at, now)
-        }
-      end)
-
-    retrying =
-      state.retry_attempts
-      |> Enum.map(fn {issue_id, %{attempt: attempt, due_at_ms: due_at_ms} = retry} ->
-        %{
-          issue_id: issue_id,
-          attempt: attempt,
-          due_in_ms: max(0, due_at_ms - now_ms),
-          identifier: Map.get(retry, :identifier),
-          error: Map.get(retry, :error),
-          worker_host: Map.get(retry, :worker_host),
-          workspace_path: Map.get(retry, :workspace_path)
-        }
-      end)
-
-    {:reply,
-     %{
-       running: running,
-       retrying: retrying,
-       agent_totals: state.agent_totals,
-       polling: %{
-         checking?: state.poll_check_in_progress == true,
-         next_poll_in_ms: next_poll_in_ms(state.next_poll_due_at_ms, now_ms),
-         poll_interval_ms: state.poll_interval_ms
-       }
-     }, state}
+    snapshot = Snapshot.build(state, DateTime.utc_now(), System.monotonic_time(:millisecond))
+    {:reply, snapshot, state}
   end
 
   def handle_call(:request_refresh, _from, state) do
@@ -1170,97 +1113,6 @@ defmodule SymphonyElixir.Orchestrator do
        requested_at: DateTime.utc_now(),
        operations: ["poll", "reconcile"]
      }, state}
-  end
-
-  defp integrate_agent_update(running_entry, %{event: event, timestamp: timestamp} = update) do
-    token_delta = extract_token_delta(running_entry, update)
-    cost_delta = extract_cost_delta(running_entry, update)
-    agent_input_tokens = Map.get(running_entry, :agent_input_tokens, 0)
-    agent_output_tokens = Map.get(running_entry, :agent_output_tokens, 0)
-    agent_total_tokens = Map.get(running_entry, :agent_total_tokens, 0)
-    agent_cost_usd = Map.get(running_entry, :agent_cost_usd, 0.0)
-    agent_pid = Map.get(running_entry, :agent_pid)
-    last_reported_input = Map.get(running_entry, :agent_last_reported_input_tokens, 0)
-    last_reported_output = Map.get(running_entry, :agent_last_reported_output_tokens, 0)
-    last_reported_total = Map.get(running_entry, :agent_last_reported_total_tokens, 0)
-    turn_count = Map.get(running_entry, :turn_count, 0)
-
-    {
-      Map.merge(running_entry, %{
-        last_agent_timestamp: timestamp,
-        last_agent_message: summarize_agent_update(update),
-        session_id: session_id_for_update(running_entry.session_id, update),
-        last_agent_event: event,
-        agent_pid: agent_pid_for_update(agent_pid, update),
-        agent_input_tokens: agent_input_tokens + token_delta.input_tokens,
-        agent_output_tokens: agent_output_tokens + token_delta.output_tokens,
-        agent_total_tokens: agent_total_tokens + token_delta.total_tokens,
-        agent_cost_usd: agent_cost_usd + cost_delta,
-        agent_last_reported_input_tokens: max(last_reported_input, token_delta.input_reported),
-        agent_last_reported_output_tokens: max(last_reported_output, token_delta.output_reported),
-        agent_last_reported_total_tokens: max(last_reported_total, token_delta.total_reported),
-        turn_count: turn_count_for_update(turn_count, running_entry.session_id, update),
-        rate_limit_info:
-          extract_rate_limit_info(update) || Map.get(running_entry, :rate_limit_info)
-      }),
-      token_delta,
-      cost_delta
-    }
-  end
-
-  defp extract_rate_limit_info(%{event: :notification, payload: %{"type" => "rate_limit_event"} = payload}) do
-    case Map.get(payload, "rate_limit_info") do
-      %{} = info -> info
-      _ -> nil
-    end
-  end
-
-  defp extract_rate_limit_info(_update), do: nil
-
-  defp agent_pid_for_update(_existing, %{claude_session_pid: pid})
-       when is_binary(pid),
-       do: pid
-
-  defp agent_pid_for_update(_existing, %{claude_session_pid: pid})
-       when is_integer(pid),
-       do: Integer.to_string(pid)
-
-  defp agent_pid_for_update(_existing, %{claude_session_pid: pid}) when is_list(pid),
-    do: to_string(pid)
-
-  defp agent_pid_for_update(_existing, %{agent_pid: pid}) when is_binary(pid), do: pid
-
-  defp agent_pid_for_update(existing, _update), do: existing
-
-  defp session_id_for_update(_existing, %{session_id: session_id}) when is_binary(session_id),
-    do: session_id
-
-  defp session_id_for_update(existing, _update), do: existing
-
-  defp turn_count_for_update(existing_count, existing_session_id, %{
-         event: :session_started,
-         session_id: session_id
-       })
-       when is_integer(existing_count) and is_binary(session_id) do
-    if session_id == existing_session_id do
-      existing_count
-    else
-      existing_count + 1
-    end
-  end
-
-  defp turn_count_for_update(existing_count, _existing_session_id, _update)
-       when is_integer(existing_count),
-       do: existing_count
-
-  defp turn_count_for_update(_existing_count, _existing_session_id, _update), do: 0
-
-  defp summarize_agent_update(update) do
-    %{
-      event: update[:event],
-      message: update[:payload] || update[:raw],
-      timestamp: update[:timestamp]
-    }
   end
 
   defp schedule_tick(%State{} = state, delay_ms) when is_integer(delay_ms) and delay_ms >= 0 do
@@ -1284,12 +1136,6 @@ defmodule SymphonyElixir.Orchestrator do
     :ok
   end
 
-  defp next_poll_in_ms(nil, _now_ms), do: nil
-
-  defp next_poll_in_ms(next_poll_due_at_ms, now_ms) when is_integer(next_poll_due_at_ms) do
-    max(0, next_poll_due_at_ms - now_ms)
-  end
-
   defp pop_running_entry(state, issue_id) do
     {Map.get(state.running, issue_id), %{state | running: Map.delete(state.running, issue_id)}}
   end
@@ -1298,15 +1144,12 @@ defmodule SymphonyElixir.Orchestrator do
     runtime_seconds = running_seconds(running_entry.started_at, DateTime.utc_now())
 
     agent_totals =
-      apply_token_delta(
-        state.agent_totals,
-        %{
-          input_tokens: 0,
-          output_tokens: 0,
-          total_tokens: 0,
-          seconds_running: runtime_seconds
-        }
-      )
+      TokenAccounting.apply_token_delta(state.agent_totals, %{
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+        seconds_running: runtime_seconds
+      })
 
     %{state | agent_totals: agent_totals}
   end
@@ -1331,114 +1174,6 @@ defmodule SymphonyElixir.Orchestrator do
   defp dispatch_slots_available?(%Issue{} = issue, %State{} = state) do
     available_slots(state) > 0 and state_slots_available?(issue, state.running)
   end
-
-  defp apply_agent_token_delta(
-         %{agent_totals: agent_totals} = state,
-         %{input_tokens: input, output_tokens: output, total_tokens: total} = token_delta
-       )
-       when is_integer(input) and is_integer(output) and is_integer(total) do
-    %{state | agent_totals: apply_token_delta(agent_totals, token_delta)}
-  end
-
-  defp apply_agent_token_delta(state, _token_delta), do: state
-
-  defp apply_agent_cost_delta(%{agent_totals: agent_totals} = state, cost_delta)
-       when is_number(cost_delta) and cost_delta > 0 do
-    current_cost = Map.get(agent_totals, :cost_usd, 0.0)
-    %{state | agent_totals: Map.put(agent_totals, :cost_usd, current_cost + cost_delta)}
-  end
-
-  defp apply_agent_cost_delta(state, _cost_delta), do: state
-
-  defp apply_token_delta(agent_totals, token_delta) do
-    input_tokens = Map.get(agent_totals, :input_tokens, 0) + token_delta.input_tokens
-    output_tokens = Map.get(agent_totals, :output_tokens, 0) + token_delta.output_tokens
-    total_tokens = Map.get(agent_totals, :total_tokens, 0) + token_delta.total_tokens
-
-    seconds_running =
-      Map.get(agent_totals, :seconds_running, 0) + Map.get(token_delta, :seconds_running, 0)
-
-    %{
-      input_tokens: max(0, input_tokens),
-      output_tokens: max(0, output_tokens),
-      total_tokens: max(0, total_tokens),
-      seconds_running: max(0, seconds_running),
-      cost_usd: Map.get(agent_totals, :cost_usd, 0.0)
-    }
-  end
-
-  defp extract_token_delta(running_entry, %{event: _, timestamp: _} = update) do
-    running_entry = running_entry || %{}
-    usage = Usage.extract_usage(update)
-
-    {
-      compute_token_delta(
-        running_entry,
-        :input,
-        usage,
-        :agent_last_reported_input_tokens
-      ),
-      compute_token_delta(
-        running_entry,
-        :output,
-        usage,
-        :agent_last_reported_output_tokens
-      ),
-      compute_token_delta(
-        running_entry,
-        :total,
-        usage,
-        :agent_last_reported_total_tokens
-      )
-    }
-    |> Tuple.to_list()
-    |> then(fn [input, output, total] ->
-      %{
-        input_tokens: input.delta,
-        output_tokens: output.delta,
-        total_tokens: total.delta,
-        input_reported: input.reported,
-        output_reported: output.reported,
-        total_reported: total.reported
-      }
-    end)
-  end
-
-  defp extract_cost_delta(_running_entry, %{event: _, timestamp: _} = update) do
-    case Usage.extract_cost_usd(update) do
-      cost when cost > 0 -> cost
-      _ -> 0.0
-    end
-  end
-
-  defp compute_token_delta(running_entry, token_key, usage, reported_key) do
-    next_total = get_token_usage(usage, token_key)
-    prev_reported = Map.get(running_entry, reported_key, 0)
-    delta = max(next_total - prev_reported, 0)
-
-    %{delta: delta, reported: next_total}
-  end
-
-  # Claude Code's `usage` shape always uses string keys with integer values
-  # (see `Claude.Session.extract_usage/1`). Cache breakdown fields exist but
-  # are intentionally not rolled into the running totals here.
-  defp get_token_usage(usage, :input), do: read_token_count(usage, "input_tokens")
-  defp get_token_usage(usage, :output), do: read_token_count(usage, "output_tokens")
-
-  defp get_token_usage(usage, :total) do
-    # Claude Code's usage block doesn't include `total_tokens`. Compute from
-    # input + output so the running total is still meaningful.
-    get_token_usage(usage, :input) + get_token_usage(usage, :output)
-  end
-
-  defp read_token_count(usage, key) when is_map(usage) do
-    case Map.get(usage, key) do
-      value when is_integer(value) and value >= 0 -> value
-      _ -> 0
-    end
-  end
-
-  defp read_token_count(_usage, _key), do: 0
 
   defp running_seconds(%DateTime{} = started_at, %DateTime{} = now) do
     max(0, DateTime.diff(now, started_at, :second))

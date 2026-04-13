@@ -5,6 +5,7 @@ defmodule SymphonyElixir.Linear.Client do
 
   require Logger
   alias SymphonyElixir.{Config, Linear.Issue}
+  alias SymphonyElixir.Linear.ResponseDecoder
 
   @issue_page_size 50
   @max_error_body_log_bytes 1_000
@@ -187,7 +188,7 @@ defmodule SymphonyElixir.Linear.Client do
   @doc false
   @spec normalize_issue_for_test(map()) :: Issue.t() | nil
   def normalize_issue_for_test(issue) when is_map(issue) do
-    normalize_issue(issue, nil)
+    ResponseDecoder.normalize_issue(issue, nil)
   end
 
   @doc false
@@ -205,12 +206,13 @@ defmodule SymphonyElixir.Linear.Client do
           nil
       end
 
-    normalize_issue(issue, assignee_filter)
+    ResponseDecoder.normalize_issue(issue, assignee_filter)
   end
 
   @doc false
   @spec next_page_cursor_for_test(map()) :: {:ok, String.t()} | :done | {:error, term()}
-  def next_page_cursor_for_test(page_info) when is_map(page_info), do: next_page_cursor(page_info)
+  def next_page_cursor_for_test(page_info) when is_map(page_info),
+    do: ResponseDecoder.next_page_cursor(page_info)
 
   @doc false
   @spec merge_issue_pages_for_test([[Issue.t()]]) :: [Issue.t()]
@@ -249,10 +251,10 @@ defmodule SymphonyElixir.Linear.Client do
              relationFirst: @issue_page_size,
              after: after_cursor
            }),
-         {:ok, issues, page_info} <- decode_linear_page_response(body, assignee_filter) do
+         {:ok, issues, page_info} <- ResponseDecoder.decode_page_response(body, assignee_filter) do
       updated_acc = prepend_page_issues(issues, acc_issues)
 
-      case next_page_cursor(page_info) do
+      case ResponseDecoder.next_page_cursor(page_info) do
         {:ok, next_cursor} ->
           do_fetch_by_states_page(project_slug, state_names, assignee_filter, next_cursor, updated_acc)
 
@@ -297,7 +299,7 @@ defmodule SymphonyElixir.Linear.Client do
            relationFirst: @issue_page_size
          }) do
       {:ok, body} ->
-        with {:ok, issues} <- decode_linear_response(body, assignee_filter) do
+        with {:ok, issues} <- ResponseDecoder.decode_response(body, assignee_filter) do
           updated_acc = prepend_page_issues(issues, acc_issues)
           do_fetch_issue_states_page(rest_ids, assignee_filter, graphql_fun, updated_acc, issue_order_index)
         end
@@ -402,91 +404,6 @@ defmodule SymphonyElixir.Linear.Client do
     )
   end
 
-  defp decode_linear_response(%{"data" => %{"issues" => %{"nodes" => nodes}}}, assignee_filter) do
-    issues =
-      nodes
-      |> Enum.map(&normalize_issue(&1, assignee_filter))
-      |> Enum.reject(&is_nil(&1))
-
-    {:ok, issues}
-  end
-
-  defp decode_linear_response(%{"errors" => errors}, _assignee_filter) do
-    {:error, {:linear_graphql_errors, errors}}
-  end
-
-  defp decode_linear_response(_unknown, _assignee_filter) do
-    {:error, :linear_unknown_payload}
-  end
-
-  defp decode_linear_page_response(
-         %{
-           "data" => %{
-             "issues" => %{
-               "nodes" => nodes,
-               "pageInfo" => %{"hasNextPage" => has_next_page, "endCursor" => end_cursor}
-             }
-           }
-         },
-         assignee_filter
-       ) do
-    with {:ok, issues} <- decode_linear_response(%{"data" => %{"issues" => %{"nodes" => nodes}}}, assignee_filter) do
-      {:ok, issues, %{has_next_page: has_next_page == true, end_cursor: end_cursor}}
-    end
-  end
-
-  defp decode_linear_page_response(response, assignee_filter), do: decode_linear_response(response, assignee_filter)
-
-  defp next_page_cursor(%{has_next_page: true, end_cursor: end_cursor})
-       when is_binary(end_cursor) and byte_size(end_cursor) > 0 do
-    {:ok, end_cursor}
-  end
-
-  defp next_page_cursor(%{has_next_page: true}), do: {:error, :linear_missing_end_cursor}
-  defp next_page_cursor(_), do: :done
-
-  defp normalize_issue(issue, assignee_filter) when is_map(issue) do
-    assignee = issue["assignee"]
-
-    %Issue{
-      id: issue["id"],
-      identifier: issue["identifier"],
-      title: issue["title"],
-      description: issue["description"],
-      priority: parse_priority(issue["priority"]),
-      state: get_in(issue, ["state", "name"]),
-      branch_name: issue["branchName"],
-      url: issue["url"],
-      assignee_id: assignee_field(assignee, "id"),
-      blocked_by: extract_blockers(issue),
-      labels: extract_labels(issue),
-      assigned_to_worker: assigned_to_worker?(assignee, assignee_filter),
-      created_at: parse_datetime(issue["createdAt"]),
-      updated_at: parse_datetime(issue["updatedAt"])
-    }
-  end
-
-  defp normalize_issue(_issue, _assignee_filter), do: nil
-
-  defp assignee_field(%{} = assignee, field) when is_binary(field), do: assignee[field]
-  defp assignee_field(_assignee, _field), do: nil
-
-  defp assigned_to_worker?(_assignee, nil), do: true
-
-  defp assigned_to_worker?(%{} = assignee, %{match_values: match_values})
-       when is_struct(match_values, MapSet) do
-    assignee
-    |> assignee_id()
-    |> then(fn
-      nil -> false
-      assignee_id -> MapSet.member?(match_values, assignee_id)
-    end)
-  end
-
-  defp assigned_to_worker?(_assignee, _assignee_filter), do: false
-
-  defp assignee_id(%{} = assignee), do: normalize_assignee_match_value(assignee["id"])
-
   defp routing_assignee_filter do
     case Config.settings!().tracker.assignee do
       nil ->
@@ -498,7 +415,7 @@ defmodule SymphonyElixir.Linear.Client do
   end
 
   defp build_assignee_filter(assignee) when is_binary(assignee) do
-    case normalize_assignee_match_value(assignee) do
+    case ResponseDecoder.normalize_assignee_match_value(assignee) do
       nil ->
         {:ok, nil}
 
@@ -513,7 +430,7 @@ defmodule SymphonyElixir.Linear.Client do
   defp resolve_viewer_assignee_filter do
     case graphql(@viewer_query, %{}) do
       {:ok, %{"data" => %{"viewer" => viewer}}} when is_map(viewer) ->
-        case assignee_id(viewer) do
+        case ResponseDecoder.assignee_id(viewer) do
           nil ->
             {:error, :missing_linear_viewer_identity}
 
@@ -528,59 +445,4 @@ defmodule SymphonyElixir.Linear.Client do
         {:error, reason}
     end
   end
-
-  defp normalize_assignee_match_value(value) when is_binary(value) do
-    case value |> String.trim() do
-      "" -> nil
-      normalized -> normalized
-    end
-  end
-
-  defp normalize_assignee_match_value(_value), do: nil
-
-  defp extract_labels(%{"labels" => %{"nodes" => labels}}) when is_list(labels) do
-    labels
-    |> Enum.map(& &1["name"])
-    |> Enum.reject(&is_nil/1)
-    |> Enum.map(&String.downcase/1)
-  end
-
-  defp extract_labels(_), do: []
-
-  defp extract_blockers(%{"inverseRelations" => %{"nodes" => inverse_relations}})
-       when is_list(inverse_relations) do
-    inverse_relations
-    |> Enum.flat_map(fn
-      %{"type" => relation_type, "issue" => blocker_issue}
-      when is_binary(relation_type) and is_map(blocker_issue) ->
-        if String.downcase(String.trim(relation_type)) == "blocks" do
-          [
-            %{
-              id: blocker_issue["id"],
-              identifier: blocker_issue["identifier"],
-              state: get_in(blocker_issue, ["state", "name"])
-            }
-          ]
-        else
-          []
-        end
-
-      _ ->
-        []
-    end)
-  end
-
-  defp extract_blockers(_), do: []
-
-  defp parse_datetime(nil), do: nil
-
-  defp parse_datetime(raw) do
-    case DateTime.from_iso8601(raw) do
-      {:ok, dt, _offset} -> dt
-      _ -> nil
-    end
-  end
-
-  defp parse_priority(priority) when is_integer(priority), do: priority
-  defp parse_priority(_priority), do: nil
 end
