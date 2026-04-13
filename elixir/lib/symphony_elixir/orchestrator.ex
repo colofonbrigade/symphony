@@ -721,6 +721,7 @@ defmodule SymphonyElixir.Orchestrator do
             agent_last_reported_output_tokens: 0,
             agent_last_reported_total_tokens: 0,
             turn_count: 0,
+            rate_limit_info: nil,
             retry_attempt: normalize_retry_attempt(attempt),
             started_at: DateTime.utc_now()
           })
@@ -1125,6 +1126,7 @@ defmodule SymphonyElixir.Orchestrator do
           last_agent_timestamp: metadata.last_agent_timestamp,
           last_agent_message: metadata.last_agent_message,
           last_agent_event: metadata.last_agent_event,
+          rate_limit_info: Map.get(metadata, :rate_limit_info),
           runtime_seconds: running_seconds(metadata.started_at, now)
         }
       end)
@@ -1198,12 +1200,23 @@ defmodule SymphonyElixir.Orchestrator do
         agent_last_reported_input_tokens: max(last_reported_input, token_delta.input_reported),
         agent_last_reported_output_tokens: max(last_reported_output, token_delta.output_reported),
         agent_last_reported_total_tokens: max(last_reported_total, token_delta.total_reported),
-        turn_count: turn_count_for_update(turn_count, running_entry.session_id, update)
+        turn_count: turn_count_for_update(turn_count, running_entry.session_id, update),
+        rate_limit_info:
+          extract_rate_limit_info(update) || Map.get(running_entry, :rate_limit_info)
       }),
       token_delta,
       cost_delta
     }
   end
+
+  defp extract_rate_limit_info(%{event: :notification, payload: %{"type" => "rate_limit_event"} = payload}) do
+    case Map.get(payload, "rate_limit_info") do
+      %{} = info -> info
+      _ -> nil
+    end
+  end
+
+  defp extract_rate_limit_info(_update), do: nil
 
   defp agent_pid_for_update(_existing, %{claude_session_pid: pid})
        when is_binary(pid),

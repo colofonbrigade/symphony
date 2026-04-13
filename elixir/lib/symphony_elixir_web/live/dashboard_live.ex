@@ -114,6 +114,10 @@ defmodule SymphonyElixirWeb.DashboardLive do
             </div>
           </div>
 
+          <%= if rate_limit_summary = rate_limit_summary_line(@payload.running) do %>
+            <p class="rate-limit-alert"><%= rate_limit_summary %></p>
+          <% end %>
+
           <%= if @payload.running == [] do %>
             <p class="empty-state">No active sessions.</p>
           <% else %>
@@ -149,6 +153,11 @@ defmodule SymphonyElixirWeb.DashboardLive do
                       <span class={state_badge_class(entry.state)}>
                         <%= entry.state %>
                       </span>
+                      <%= if rate_limit_badge_label(entry.rate_limit_info) do %>
+                        <span class="rate-limit-badge" title={rate_limit_badge_title(entry.rate_limit_info)}>
+                          <%= rate_limit_badge_label(entry.rate_limit_info) %>
+                        </span>
+                      <% end %>
                     </td>
                     <td>
                       <div class="session-stack">
@@ -312,5 +321,57 @@ defmodule SymphonyElixirWeb.DashboardLive do
 
   defp schedule_runtime_tick do
     Process.send_after(self(), :runtime_tick, @runtime_tick_ms)
+  end
+
+  defp rate_limit_badge_label(info) when is_map(info) do
+    case Map.get(info, "status") || Map.get(info, :status) do
+      status when status in [nil, "allowed", :allowed] -> nil
+      status -> to_string(status)
+    end
+  end
+
+  defp rate_limit_badge_label(_info), do: nil
+
+  defp rate_limit_badge_title(info) when is_map(info) do
+    type = Map.get(info, "rateLimitType") || Map.get(info, :rateLimitType) || "unknown"
+    resets = Map.get(info, "resetsAt") || Map.get(info, :resetsAt)
+
+    "type: #{type}" <>
+      case resets do
+        n when is_integer(n) -> " · resets #{format_reset_iso(n)}"
+        _ -> ""
+      end
+  end
+
+  defp rate_limit_badge_title(_info), do: ""
+
+  defp rate_limit_summary_line(running) when is_list(running) do
+    throttled =
+      running
+      |> Enum.map(& &1.rate_limit_info)
+      |> Enum.filter(&(is_map(&1) and rate_limit_badge_label(&1)))
+
+    case throttled do
+      [] ->
+        nil
+
+      infos ->
+        statuses =
+          infos
+          |> Enum.map(&rate_limit_badge_label/1)
+          |> Enum.uniq()
+          |> Enum.join(", ")
+
+        "Rate limit: #{statuses} — #{length(infos)} session(s) affected"
+    end
+  end
+
+  defp rate_limit_summary_line(_running), do: nil
+
+  defp format_reset_iso(unix_seconds) when is_integer(unix_seconds) do
+    case DateTime.from_unix(unix_seconds) do
+      {:ok, dt} -> Calendar.strftime(dt, "%H:%M UTC")
+      _ -> "?"
+    end
   end
 end

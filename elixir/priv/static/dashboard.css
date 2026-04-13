@@ -383,6 +383,33 @@ pre,
   color: var(--danger);
 }
 
+.rate-limit-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #f6d3cf;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.rate-limit-alert {
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #f6d3cf;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
 .issue-id {
   font-weight: 600;
   letter-spacing: -0.01em;

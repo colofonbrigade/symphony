@@ -208,6 +208,90 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
     assert is_integer(completed_state.agent_totals.seconds_running)
   end
 
+  test "orchestrator snapshot captures rate_limit_info from rate_limit_event notifications" do
+    issue_id = "issue-rate-limit-snapshot"
+
+    issue = %Issue{
+      id: issue_id,
+      identifier: "MT-210",
+      title: "Rate limit snapshot test",
+      description: "Track rate_limit_event",
+      state: "In Progress",
+      url: "https://example.org/issues/MT-210"
+    }
+
+    orchestrator_name = Module.concat(__MODULE__, :RateLimitOrchestrator)
+    {:ok, pid} = Orchestrator.start_link(name: orchestrator_name)
+
+    on_exit(fn ->
+      if Process.alive?(pid) do
+        Process.exit(pid, :normal)
+      end
+    end)
+
+    initial_state = :sys.get_state(pid)
+    started_at = DateTime.utc_now()
+
+    running_entry = %{
+      pid: self(),
+      ref: make_ref(),
+      identifier: issue.identifier,
+      issue: issue,
+      session_id: nil,
+      turn_count: 0,
+      last_agent_message: nil,
+      last_agent_timestamp: nil,
+      last_agent_event: nil,
+      rate_limit_info: nil,
+      started_at: started_at
+    }
+
+    :sys.replace_state(pid, fn _ ->
+      initial_state
+      |> Map.put(:running, %{issue_id => running_entry})
+      |> Map.put(:claimed, MapSet.put(initial_state.claimed, issue_id))
+    end)
+
+    now = DateTime.utc_now()
+    resets_at_unix = 1_775_696_400
+
+    rate_limit_info = %{
+      "status" => "throttled",
+      "rateLimitType" => "five_hour",
+      "resetsAt" => resets_at_unix,
+      "isUsingOverage" => false
+    }
+
+    send(
+      pid,
+      {:agent_worker_update, issue_id,
+       %{
+         event: :notification,
+         payload: %{"type" => "rate_limit_event", "rate_limit_info" => rate_limit_info},
+         timestamp: now
+       }}
+    )
+
+    snapshot = GenServer.call(pid, :snapshot)
+    assert %{running: [snapshot_entry]} = snapshot
+    assert snapshot_entry.rate_limit_info == rate_limit_info
+
+    # Subsequent non-rate-limit events should not clobber the captured info.
+    send(
+      pid,
+      {:agent_worker_update, issue_id,
+       %{
+         event: :notification,
+         payload: %{"type" => "assistant"},
+         timestamp: DateTime.utc_now()
+       }}
+    )
+
+    snapshot = GenServer.call(pid, :snapshot)
+    assert %{running: [snapshot_entry]} = snapshot
+    assert snapshot_entry.rate_limit_info == rate_limit_info
+  end
+
   test "orchestrator snapshot tracks Claude result event usage and cost" do
     issue_id = "issue-turn-completed-usage"
 
@@ -1040,6 +1124,43 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
     assert plain =~ "turn completed"
     assert plain =~ "in 18"
     assert plain =~ "out 4"
+  end
+
+  test "status dashboard renders a throttled badge when rate_limit_info.status is not allowed" do
+    row =
+      StatusDashboard.format_running_summary_for_test(%{
+        identifier: "MT-910",
+        state: "running",
+        session_id: "thread-1234567890",
+        agent_pid: "4242",
+        agent_total_tokens: 12,
+        runtime_seconds: 15,
+        last_agent_event: :notification,
+        last_agent_message: nil,
+        rate_limit_info: %{"status" => "throttled", "rateLimitType" => "five_hour"}
+      })
+
+    plain = Regex.replace(~r/\e\[[\d;]*m/, row, "")
+    assert plain =~ "[throttled]"
+  end
+
+  test "status dashboard omits the rate limit badge when status is allowed" do
+    row =
+      StatusDashboard.format_running_summary_for_test(%{
+        identifier: "MT-911",
+        state: "running",
+        session_id: "thread-1234567890",
+        agent_pid: "4242",
+        agent_total_tokens: 12,
+        runtime_seconds: 15,
+        last_agent_event: :notification,
+        last_agent_message: nil,
+        rate_limit_info: %{"status" => "allowed", "rateLimitType" => "five_hour"}
+      })
+
+    plain = Regex.replace(~r/\e\[[\d;]*m/, row, "")
+    refute plain =~ "[allowed]"
+    refute plain =~ "[throttled]"
   end
 
   test "status dashboard strips ANSI and control bytes from last agent message" do

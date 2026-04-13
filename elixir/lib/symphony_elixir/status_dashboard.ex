@@ -363,6 +363,7 @@ defmodule SymphonyElixir.StatusDashboard do
              colorize("total #{format_count(agent_total_tokens)}", @ansi_yellow),
            colorize("│ Cost: ", @ansi_bold) <>
              colorize("$#{format_cost_usd(agent_cost_usd)}", @ansi_cyan),
+           rate_limit_header_line(running),
            project_link_lines,
            project_refresh_line,
            colorize("├─ Running", @ansi_bold),
@@ -626,9 +627,84 @@ defmodule SymphonyElixir.StatusDashboard do
       " ",
       colorize(session, @ansi_cyan),
       " ",
-      colorize(event_label, status_color)
+      colorize(event_label, status_color),
+      rate_limit_badge(running_entry)
     ]
     |> Enum.join("")
+  end
+
+  defp rate_limit_badge(running_entry) do
+    case Map.get(running_entry, :rate_limit_info) do
+      %{} = info ->
+        status = Map.get(info, "status") || Map.get(info, :status)
+
+        if status in [nil, "allowed", :allowed] do
+          ""
+        else
+          " " <> colorize("[#{status}]", @ansi_red)
+        end
+
+      _ ->
+        ""
+    end
+  end
+
+  defp rate_limit_header_line(running) when is_list(running) do
+    throttled =
+      running
+      |> Enum.map(&Map.get(&1, :rate_limit_info))
+      |> Enum.filter(&(is_map(&1) and rate_limit_status(&1) not in [nil, "allowed"]))
+
+    case throttled do
+      [] ->
+        []
+
+      infos ->
+        statuses =
+          infos
+          |> Enum.map(&rate_limit_status/1)
+          |> Enum.uniq()
+          |> Enum.join(", ")
+
+        earliest_reset =
+          infos
+          |> Enum.map(&rate_limit_resets_at/1)
+          |> Enum.filter(&is_integer/1)
+          |> Enum.min(fn -> nil end)
+
+        reset_suffix =
+          case earliest_reset do
+            nil -> ""
+            ts -> " · resets #{format_reset_time(ts)}"
+          end
+
+        colorize("│ Rate limit: ", @ansi_bold) <>
+          colorize("#{statuses} · #{length(infos)} session(s)#{reset_suffix}", @ansi_red)
+    end
+  end
+
+  defp rate_limit_header_line(_), do: []
+
+  defp rate_limit_status(info) when is_map(info),
+    do: Map.get(info, "status") || Map.get(info, :status)
+
+  defp rate_limit_resets_at(info) when is_map(info) do
+    case Map.get(info, "resetsAt") || Map.get(info, :resetsAt) do
+      n when is_integer(n) -> n
+      _ -> nil
+    end
+  end
+
+  defp format_reset_time(unix_seconds) when is_integer(unix_seconds) do
+    case DateTime.from_unix(unix_seconds) do
+      {:ok, dt} ->
+        dt
+        |> DateTime.shift_zone!("Etc/UTC")
+        |> Calendar.strftime("%H:%M UTC")
+
+      _ ->
+        "?"
+    end
   end
 
   @doc false

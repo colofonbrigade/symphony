@@ -112,7 +112,8 @@ defmodule SymphonyElixirWeb.Presenter do
         output_tokens: entry.agent_output_tokens,
         total_tokens: entry.agent_total_tokens
       },
-      cost_usd: Map.get(entry, :agent_cost_usd, 0.0)
+      cost_usd: Map.get(entry, :agent_cost_usd, 0.0),
+      rate_limit_info: Map.get(entry, :rate_limit_info)
     }
   end
 
@@ -144,7 +145,8 @@ defmodule SymphonyElixirWeb.Presenter do
         output_tokens: running.agent_output_tokens,
         total_tokens: running.agent_total_tokens
       },
-      cost_usd: Map.get(running, :agent_cost_usd, 0.0)
+      cost_usd: Map.get(running, :agent_cost_usd, 0.0),
+      rate_limit_info: Map.get(running, :rate_limit_info)
     }
   end
 
