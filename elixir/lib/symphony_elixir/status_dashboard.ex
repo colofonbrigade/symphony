@@ -605,9 +605,11 @@ defmodule SymphonyElixir.StatusDashboard do
     status_color =
       case event do
         :none -> @ansi_red
-        "codex/event/token_count" -> @ansi_yellow
-        "codex/event/task_started" -> @ansi_green
-        "turn_completed" -> @ansi_magenta
+        :startup_failed -> @ansi_red
+        :turn_failed -> @ansi_red
+        :turn_ended_with_error -> @ansi_red
+        :turn_completed -> @ansi_magenta
+        :session_started -> @ansi_green
         _ -> @ansi_blue
       end
 

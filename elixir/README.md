@@ -174,7 +174,7 @@ make all
 ```
 
 Run the real external end-to-end test only when you want Symphony to create disposable Linear
-resources and launch a real `codex app-server` session:
+resources and launch a real Claude Code session:
 
 ```bash
 cd elixir
@@ -182,26 +182,44 @@ export LINEAR_API_KEY=...
 make e2e
 ```
 
+Required environment variables:
+
+- `LINEAR_API_KEY` — personal Linear API key with permission to create projects and issues in
+  the target team.
+- `SYMPHONY_LIVE_LINEAR_TEAM_KEY` — Linear team key to run the live test against (the short
+  prefix on your issue identifiers, e.g. `MT` for `MT-123`). No default — the live test will
+  flunk with an explanatory message if this is unset.
+
 Optional environment variables:
 
-- `SYMPHONY_LIVE_LINEAR_TEAM_KEY` defaults to `SYME2E`
-- `SYMPHONY_LIVE_SSH_WORKER_HOSTS` uses those SSH hosts when set, as a comma-separated list
+- `SYMPHONY_LIVE_SSH_WORKER_HOSTS` — comma-separated SSH hosts to use as remote workers. When
+  set, the SSH scenario targets those hosts; when unset, the SSH scenario uses `docker compose`
+  to start two disposable SSH workers on `localhost:<port>`.
+
+Set the required vars in your shell profile or a local direnv `.envrc` rather than committing
+them:
+
+```bash
+export LINEAR_API_KEY=lin_api_...
+export SYMPHONY_LIVE_LINEAR_TEAM_KEY=MT
+```
 
 `make e2e` runs two live scenarios:
-- one with a local worker
-- one with SSH workers
+- one with a local worker (runs `claude` on the host machine)
+- one with SSH workers (either remote hosts or ephemeral Docker containers)
 
-If `SYMPHONY_LIVE_SSH_WORKER_HOSTS` is unset, the SSH scenario uses `docker compose` to start two
-disposable SSH workers on `localhost:<port>`. The live test generates a temporary SSH keypair,
-mounts the host `~/.codex/auth.json` into each worker, verifies that Symphony can talk to them
-over real SSH, then runs the same orchestration flow against those worker addresses. This keeps
-the transport representative without depending on long-lived external machines.
-
-Set `SYMPHONY_LIVE_SSH_WORKER_HOSTS` if you want `make e2e` to target real SSH hosts instead.
+In the Docker variant, the live test generates a temporary SSH keypair, extracts the Claude Code
+OAuth credential from the macOS keychain (`security find-generic-password -s
+"Claude Code-credentials"`), writes it to a temp `.credentials.json` that is mounted into each
+worker at `/home/worker/.claude`, then verifies Symphony can talk to the workers over real SSH
+and run the same orchestration flow against those worker addresses. This keeps the transport
+representative without depending on long-lived external machines. The keychain extraction means
+the Docker variant is macOS-only for now; Linux hosts will need an alternative auth path.
 
 The live test creates a temporary Linear project and issue, writes a temporary `WORKFLOW.md`, runs
-a real agent turn, verifies the workspace side effect, requires Codex to comment on and close the
-Linear issue, then marks the project completed so the run remains visible in Linear.
+a real agent turn, verifies the workspace side effect, requires the agent to post a comment and
+move the issue to a completed state, then marks the project completed so the run remains visible
+in Linear.
 
 ## FAQ
 
@@ -213,8 +231,8 @@ actively running subagents, which is very useful during development.
 
 ### What's the easiest way to set this up for my own codebase?
 
-Launch `codex` in your repo, give it the URL to the Symphony repo, and ask it to set things up for
-you.
+Launch `claude` in your repo, give it the URL to the Symphony repo, and ask it to set things up
+for you.
 
 ## License
 

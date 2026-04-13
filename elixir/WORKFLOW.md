@@ -1,7 +1,12 @@
 ---
+# Replace `project_slug` with your own Linear project's slug before running
+# Symphony against this workflow. The slug is the string after `/project/` in
+# a Linear project URL (for example `my-project-abc123`). The placeholder
+# below is a dogfood value and will not match anything in your Linear
+# workspace.
 tracker:
   kind: linear
-  project_slug: "symphony-0c79b11b75ea"
+  project_slug: "YOUR_LINEAR_PROJECT_SLUG"
   active_states:
     - Todo
     - In Progress

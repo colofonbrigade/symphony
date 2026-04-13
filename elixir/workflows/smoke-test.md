@@ -11,8 +11,10 @@
 # Required env vars (set in your shell before starting Symphony):
 #   LINEAR_PROJECT_SLUG  Linear project slug, e.g. "testing-206961824733"
 #   SMOKE_WORKSPACE_ROOT Per-issue workspace root, e.g. "~/code/symphony-smoke-workspaces"
-#   SMOKE_REPO_URL       Git URL to clone, e.g. "git@github.com:colofonbrigade/symphony.git"
-#   SMOKE_REPO_BRANCH    Branch to clone, e.g. "claude-code"
+#   SMOKE_REPO_URL       Git URL to clone into the per-issue workspace, e.g.
+#                        "https://github.com/openai/symphony" (use your fork
+#                        if you want commits/PRs to land there instead)
+#   SMOKE_REPO_BRANCH    Branch to clone, e.g. "main"
 #
 # Plus the standard ones Symphony already resolves:
 #   LINEAR_API_KEY       Linear personal API key (resolved via $LINEAR_API_KEY in tracker.api_key)

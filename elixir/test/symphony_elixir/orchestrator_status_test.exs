@@ -910,7 +910,7 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
              agent_total_tokens: 3_200,
              runtime_seconds: 75,
              turn_count: 7,
-             last_agent_event: "turn_completed",
+             last_agent_event: :turn_completed,
              last_agent_message: %{
                event: :notification,
                message: %{

@@ -51,7 +51,7 @@ defmodule SymphonyElixir.StatusDashboardSnapshotTest do
              agent_total_tokens: 120_450,
              runtime_seconds: 785,
              turn_count: 11,
-             last_agent_event: "turn_completed",
+             last_agent_event: :turn_completed,
              last_agent_message: turn_completed_message("completed")
            }),
            running_entry(%{
@@ -61,7 +61,7 @@ defmodule SymphonyElixir.StatusDashboardSnapshotTest do
              agent_total_tokens: 89_200,
              runtime_seconds: 412,
              turn_count: 4,
-             last_agent_event: "codex/event/task_started",
+             last_agent_event: :session_started,
              last_agent_message: exec_command_message("mix test --cover")
            })
          ],
@@ -162,7 +162,7 @@ defmodule SymphonyElixir.StatusDashboardSnapshotTest do
              agent_total_tokens: 3_200,
              runtime_seconds: 75,
              turn_count: 7,
-             last_agent_event: "codex/event/token_count",
+             last_agent_event: :notification,
              last_agent_message: token_usage_message(90, 12, 102)
            })
          ],

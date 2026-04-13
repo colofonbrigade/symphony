@@ -7,7 +7,6 @@ defmodule SymphonyElixir.LiveE2ETest do
   @moduletag :live_e2e
   @moduletag timeout: 300_000
 
-  @default_team_key "PRE"
   @docker_worker_count 2
   @docker_support_dir Path.expand("../support/live_e2e_docker", __DIR__)
   @docker_compose_file Path.join(@docker_support_dir, "docker-compose.yml")
@@ -396,13 +395,30 @@ defmodule SymphonyElixir.LiveE2ETest do
     "'" <> String.replace(value, "'", "'\"'\"'") <> "'"
   end
 
+  defp require_team_key! do
+    case System.fetch_env("SYMPHONY_LIVE_LINEAR_TEAM_KEY") do
+      {:ok, value} when value != "" ->
+        value
+
+      _ ->
+        flunk("""
+        SYMPHONY_LIVE_LINEAR_TEAM_KEY must be set to run the live e2e test. For example:
+
+          export SYMPHONY_LIVE_LINEAR_TEAM_KEY=<your-linear-team-key>
+
+        The team key is the short prefix on Linear issue identifiers (e.g. `MT` for `MT-123`).
+        Set it alongside LINEAR_API_KEY in your shell config or a local direnv `.envrc`.
+        """)
+    end
+  end
+
   defp run_live_issue_flow!(backend) when backend in [:local, :ssh] do
     run_id = "symphony-live-e2e-#{backend}-#{System.unique_integer([:positive])}"
     test_root = Path.join(System.tmp_dir!(), run_id)
     workflow_root = Path.join(test_root, "workflow")
     workflow_file = Path.join(workflow_root, "WORKFLOW.md")
     worker_setup = live_worker_setup!(backend, run_id, test_root)
-    team_key = System.get_env("SYMPHONY_LIVE_LINEAR_TEAM_KEY") || @default_team_key
+    team_key = require_team_key!()
     original_workflow_path = Workflow.workflow_file_path()
     orchestrator_pid = Process.whereis(SymphonyElixir.Orchestrator)
 
