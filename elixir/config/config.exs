@@ -20,10 +20,12 @@ config :core, ecto_repos: [Core.Telemetry.Repo]
 config :core, Core.Telemetry.Repo,
   database: Path.join(System.user_home!() || System.tmp_dir!(), ".symphony/telemetry.db"),
   journal_mode: :wal,
-  pool_size: 1
+  pool_size: 1,
+  priv: "priv/telemetry_repo"
 
 if Mix.env() == :test do
   config :core, Core.Telemetry.Repo,
     database: ":memory:",
-    pool_size: 1
+    pool_size: 1,
+    priv: "priv/telemetry_repo"
 end
