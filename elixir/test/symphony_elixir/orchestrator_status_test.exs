@@ -1099,25 +1099,28 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
 
   test "status dashboard renders last agent message in EVENT column" do
     row =
-      StatusDashboard.format_running_summary_for_test(%{
-        identifier: "MT-233",
-        state: "running",
-        session_id: "thread-1234567890",
-        agent_pid: "4242",
-        agent_total_tokens: 12,
-        runtime_seconds: 15,
-        last_agent_event: :turn_completed,
-        last_agent_message: %{
-          event: :turn_completed,
-          message: %{
-            "type" => "result",
-            "subtype" => "success",
-            "is_error" => false,
-            "usage" => %{"input_tokens" => 18, "output_tokens" => 4},
-            "total_cost_usd" => 0.0125
+      StatusDashboard.format_running_summary_for_test(
+        %{
+          identifier: "MT-233",
+          state: "running",
+          session_id: "thread-1234567890",
+          agent_pid: "4242",
+          agent_total_tokens: 12,
+          runtime_seconds: 15,
+          last_agent_event: :turn_completed,
+          last_agent_message: %{
+            event: :turn_completed,
+            message: %{
+              "type" => "result",
+              "subtype" => "success",
+              "is_error" => false,
+              "usage" => %{"input_tokens" => 18, "output_tokens" => 4},
+              "total_cost_usd" => 0.0125
+            }
           }
-        }
-      })
+        },
+        140
+      )
 
     plain = Regex.replace(~r/\e\[[\d;]*m/, row, "")
 
@@ -1174,16 +1177,19 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
         " after\nline"
 
     row =
-      StatusDashboard.format_running_summary_for_test(%{
-        identifier: "MT-898",
-        state: "running",
-        session_id: "thread-1234567890",
-        agent_pid: "4242",
-        agent_total_tokens: 12,
-        runtime_seconds: 15,
-        last_agent_event: :notification,
-        last_agent_message: payload
-      })
+      StatusDashboard.format_running_summary_for_test(
+        %{
+          identifier: "MT-898",
+          state: "running",
+          session_id: "thread-1234567890",
+          agent_pid: "4242",
+          agent_total_tokens: 12,
+          runtime_seconds: 15,
+          last_agent_event: :notification,
+          last_agent_message: payload
+        },
+        140
+      )
 
     plain = Regex.replace(~r/\e\[[0-9;]*m/, row, "")
 
