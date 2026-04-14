@@ -1,12 +1,13 @@
-defmodule Core.Orchestrator.Snapshot do
+defmodule Schema.Snapshot do
   @moduledoc """
-  Pure projection of orchestrator state into the read-only snapshot map that
-  the status dashboard, LiveView dashboard, and HTTP observability API
-  consume via `Web.Presenter`.
+  Shared shape of the read-only orchestrator snapshot consumed by the
+  terminal `Core.StatusDashboard`, the `Web.DashboardLive` LiveView, and the
+  `Web.ObservabilityApiController` JSON API (via `Web.Presenter`).
 
-  The orchestrator's `handle_call(:snapshot, ...)` calls `build/3` after
-  refreshing its runtime config; everything else in this module is a pure
-  function over state.
+  Pure projection: `build/3` takes orchestrator state (a plain map with the
+  documented keys) plus a wall-clock `DateTime` and a monotonic millisecond
+  reading, and returns a new `snapshot` map. No Application-env reads, no
+  cross-boundary calls.
   """
 
   @type snapshot :: %{

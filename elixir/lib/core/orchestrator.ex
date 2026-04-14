@@ -9,7 +9,8 @@ defmodule Core.Orchestrator do
 
   alias Core.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
   alias Core.Linear.Issue
-  alias Core.Orchestrator.{Snapshot, TokenAccounting}
+  alias Core.Orchestrator.TokenAccounting
+  alias Schema.Snapshot
 
   @continuation_retry_delay_ms 1_000
   @failure_retry_base_ms 10_000
