@@ -11,21 +11,22 @@ defmodule Core.StatusDashboard do
   alias Core.Orchestrator
   alias Core.StatusDashboard.AgentMessageHumanizer
 
+  @default_terminal_columns 115
   @minimum_idle_rerender_ms 1_000
-  @throughput_window_ms 5_000
-  @throughput_graph_window_ms 10 * 60 * 1000
-  @throughput_graph_columns 24
-  @sparkline_blocks ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
-  @running_id_width 8
-  @running_stage_width 14
-  @running_pid_width 8
+  @render_dashboard? Application.compile_env!(:core, __MODULE__)[:render]
   @running_age_width 12
-  @running_tokens_width 10
-  @running_session_width 14
   @running_event_default_width 44
   @running_event_min_width 12
+  @running_id_width 8
+  @running_pid_width 8
   @running_row_chrome_width 10
-  @default_terminal_columns 115
+  @running_session_width 14
+  @running_stage_width 14
+  @running_tokens_width 10
+  @sparkline_blocks ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+  @throughput_graph_columns 24
+  @throughput_graph_window_ms 10 * 60 * 1000
+  @throughput_window_ms 5_000
 
   @ansi_reset IO.ANSI.reset()
   @ansi_bold IO.ANSI.bright()
@@ -104,7 +105,10 @@ defmodule Core.StatusDashboard do
     refresh_ms = refresh_ms_override || observability.refresh_ms
     render_interval_ms = render_interval_ms_override || observability.render_interval_ms
     render_fun = Keyword.get(opts, :render_fun, &render_to_terminal/1)
-    enabled = resolve_override(enabled_override, observability.dashboard_enabled and dashboard_enabled?())
+
+    enabled =
+      resolve_override(enabled_override, observability.dashboard_enabled and dashboard_enabled?())
+
     schedule_tick(refresh_ms, enabled)
 
     {:ok,
@@ -153,10 +157,15 @@ defmodule Core.StatusDashboard do
     {:noreply, state}
   end
 
-  def handle_info(:refresh, %{enabled: true} = state), do: {:noreply, maybe_render(refresh_runtime_config(state))}
+  def handle_info(:refresh, %{enabled: true} = state),
+    do: {:noreply, maybe_render(refresh_runtime_config(state))}
+
   def handle_info(:refresh, state), do: {:noreply, state}
 
-  def handle_info({:flush_render, timer_ref}, %{enabled: true, flush_timer_ref: timer_ref} = state) do
+  def handle_info(
+        {:flush_render, timer_ref},
+        %{enabled: true, flush_timer_ref: timer_ref} = state
+      ) do
     now_ms = System.monotonic_time(:millisecond)
 
     state =
@@ -182,7 +191,11 @@ defmodule Core.StatusDashboard do
 
     %{
       state
-      | enabled: resolve_override(state.enabled_override, observability.dashboard_enabled and dashboard_enabled?()),
+      | enabled:
+          resolve_override(
+            state.enabled_override,
+            observability.dashboard_enabled and dashboard_enabled?()
+          ),
         refresh_ms: state.refresh_ms_override || observability.refresh_ms,
         render_interval_ms: state.render_interval_ms_override || observability.render_interval_ms
     }
@@ -263,15 +276,19 @@ defmodule Core.StatusDashboard do
 
   defp render_now?(%{last_rendered_at_ms: nil, flush_timer_ref: nil}, _now_ms), do: true
 
-  defp render_now?(%{last_rendered_at_ms: last_rendered_at_ms, render_interval_ms: render_interval_ms}, now_ms)
+  defp render_now?(
+         %{last_rendered_at_ms: last_rendered_at_ms, render_interval_ms: render_interval_ms},
+         now_ms
+       )
        when is_integer(last_rendered_at_ms) and is_integer(render_interval_ms) do
     now_ms - last_rendered_at_ms >= render_interval_ms
   end
 
   defp render_now?(_state, _now_ms), do: false
 
-  defp schedule_flush_render(%{flush_timer_ref: timer_ref} = state, _now_ms) when is_reference(timer_ref),
-    do: state
+  defp schedule_flush_render(%{flush_timer_ref: timer_ref} = state, _now_ms)
+       when is_reference(timer_ref),
+       do: state
 
   defp schedule_flush_render(state, now_ms) do
     delay_ms = flush_delay_ms(state, now_ms)
@@ -353,7 +370,8 @@ defmodule Core.StatusDashboard do
              colorize("#{agent_count}", @ansi_green) <>
              colorize("/", @ansi_gray) <>
              colorize("#{max_agents}", @ansi_gray),
-           colorize("│ Throughput: ", @ansi_bold) <> colorize("#{format_tps(tps)} tps", @ansi_cyan),
+           colorize("│ Throughput: ", @ansi_bold) <>
+             colorize("#{format_tps(tps)} tps", @ansi_cyan),
            colorize("│ Runtime: ", @ansi_bold) <>
              colorize(format_runtime_seconds(agent_seconds_running), @ansi_magenta),
            colorize("│ Tokens: ", @ansi_bold) <>
@@ -514,7 +532,13 @@ defmodule Core.StatusDashboard do
   end
 
   @doc false
-  @spec throttled_tps(integer() | nil, float() | nil, integer(), [{integer(), integer()}], integer()) ::
+  @spec throttled_tps(
+          integer() | nil,
+          float() | nil,
+          integer(),
+          [{integer(), integer()}],
+          integer()
+        ) ::
           {integer(), float()}
   def throttled_tps(last_second, last_value, now_ms, token_samples, current_tokens) do
     second = div(now_ms, 1000)
@@ -532,7 +556,8 @@ defmodule Core.StatusDashboard do
 
   @doc false
   @spec format_snapshot_content_for_test(term(), number()) :: String.t()
-  def format_snapshot_content_for_test(snapshot_data, tps), do: format_snapshot_content(snapshot_data, tps)
+  def format_snapshot_content_for_test(snapshot_data, tps),
+    do: format_snapshot_content(snapshot_data, tps)
 
   @doc false
   @spec format_snapshot_content_for_test(term(), number(), integer() | nil) :: String.t()
@@ -586,14 +611,19 @@ defmodule Core.StatusDashboard do
     issue = format_cell(running_entry.identifier || "unknown", @running_id_width)
     state = running_entry.state || "unknown"
     state_display = format_cell(to_string(state), @running_stage_width)
-    session = running_entry.session_id |> compact_session_id() |> format_cell(@running_session_width)
+
+    session =
+      running_entry.session_id |> compact_session_id() |> format_cell(@running_session_width)
+
     pid = format_cell(running_entry.agent_pid || "n/a", @running_pid_width)
     total_tokens = running_entry.agent_total_tokens || 0
     runtime_seconds = running_entry.runtime_seconds || 0
     turn_count = Map.get(running_entry, :turn_count, 0)
     age = format_cell(format_runtime_and_turns(runtime_seconds, turn_count), @running_age_width)
     event = running_entry.last_agent_event || "none"
-    event_label = format_cell(summarize_message(running_entry.last_agent_message), running_event_width)
+
+    event_label =
+      format_cell(summarize_message(running_entry.last_agent_message), running_event_width)
 
     tokens = format_count(total_tokens) |> format_cell(@running_tokens_width, :right)
 
@@ -713,7 +743,8 @@ defmodule Core.StatusDashboard do
 
   @doc false
   @spec tps_graph_for_test([{integer(), integer()}], integer(), integer()) :: String.t()
-  def tps_graph_for_test(samples, now_ms, current_tokens), do: tps_graph(samples, now_ms, current_tokens)
+  def tps_graph_for_test(samples, now_ms, current_tokens),
+    do: tps_graph(samples, now_ms, current_tokens)
 
   defp format_retry_rows(retrying) do
     if retrying == [] do
@@ -786,7 +817,8 @@ defmodule Core.StatusDashboard do
   defp format_runtime_seconds(seconds) when is_binary(seconds), do: seconds
   defp format_runtime_seconds(_), do: "0m 0s"
 
-  defp format_runtime_and_turns(seconds, turn_count) when is_integer(turn_count) and turn_count > 0 do
+  defp format_runtime_and_turns(seconds, turn_count)
+       when is_integer(turn_count) and turn_count > 0 do
     "#{format_runtime_seconds(seconds)} / #{turn_count}"
   end
 
@@ -1039,17 +1071,7 @@ defmodule Core.StatusDashboard do
 
   defp truncate(value, _max), do: value
 
-  defp dashboard_enabled? do
-    if Code.ensure_loaded?(Mix) and function_exported?(Mix, :env, 0) do
-      try do
-        Mix.env() != :test
-      rescue
-        _ -> true
-      end
-    else
-      true
-    end
-  end
+  defp dashboard_enabled?, do: @render_dashboard?
 
   defp keyword_override(opts, key) do
     if Keyword.has_key?(opts, key), do: Keyword.fetch!(opts, key), else: nil

@@ -67,6 +67,40 @@ If a module body calls `Application.put_env/3` outside those cases, the value pr
 `runtime.exs`. If the entry point needs to hand data to `runtime.exs`, use `System.put_env/2` to
 publish it, then let `runtime.exs` pick it up — this keeps writes centralized and reads everywhere.
 
+## Environment-specific configuration (`config/<env>.exs`)
+
+`config/config.exs` holds compile-time config that applies to every Mix environment. It ends with:
+
+```elixir
+import_config "#{config_env()}.exs"
+```
+
+which pulls in one of `config/dev.exs`, `config/test.exs`, or `config/prod.exs` based on
+`MIX_ENV`. Each env file holds only the overrides specific to that environment; empty stubs are
+fine.
+
+This is a different axis from `runtime.exs`:
+
+| File                   | When it runs     | Use for                                                                                        |
+| ---------------------- | ---------------- | ---------------------------------------------------------------------------------------------- |
+| `config/config.exs`    | compile          | Values common to every env                                                                     |
+| `config/<env>.exs`     | compile          | Overrides that differ per Mix env (test-only flags, dev-only verbose logging, prod-only caches) |
+| `config/runtime.exs`   | boot (every run) | OS env var reads, per-boot randoms, values derived from external files                         |
+
+Rules of thumb:
+
+- If the value is fixed once a release is built (a feature flag, a cache flag that depends on env,
+  a test-only mock module), it belongs in a `config/<env>.exs` file and can be read via
+  `Application.compile_env/3` (or `compile_env!/2` when the absence of the key is a bug).
+- If the value is fixed at boot but depends on the deploy target (secrets, file paths, workflow
+  YAML), it belongs in `config/runtime.exs` and is read via `Application.get_env/2`.
+- If both could work, prefer `compile_env` — it inlines into the `.beam` at compile time (zero
+  runtime cost) and Elixir emits a warning if `runtime.exs` later overwrites the key, which
+  catches accidental "I thought this was runtime-settable" mistakes.
+- Never branch on `Mix.env()` inside `lib/` code to decide behavior. Put the differing value in
+  `config/<env>.exs` and read it like any other config. Mix env is not a value the running system
+  should know about.
+
 ## Dependency direction
 
 Cross-boundary calls must form a **directed acyclic graph**:

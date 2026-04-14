@@ -668,15 +668,27 @@ defmodule Core.ExtensionsTest do
     assert {:error, _reason} = HttpServer.start_link(host: "bad host", port: port)
   end
 
-  defp start_test_endpoint(overrides) do
+  defp start_test_endpoint(overrides \\ []) do
     endpoint_config =
       :core
       |> Application.get_env(Web.Endpoint, [])
       |> Keyword.merge(server: false, secret_key_base: String.duplicate("s", 64))
-      |> Keyword.merge(overrides)
+      |> Keyword.merge(Keyword.drop(overrides, [:orchestrator, :snapshot_timeout_ms]))
 
     Application.put_env(:core, Web.Endpoint, endpoint_config)
     start_supervised!({Web.Endpoint, []})
+
+    case Keyword.fetch(overrides, :orchestrator) do
+      {:ok, orchestrator} -> Process.put(:endpoint_orchestrator, orchestrator)
+      :error -> :ok
+    end
+
+    case Keyword.fetch(overrides, :snapshot_timeout_ms) do
+      {:ok, timeout} -> Process.put(:endpoint_snapshot_timeout_ms, timeout)
+      :error -> :ok
+    end
+
+    :ok
   end
 
   defp static_snapshot do

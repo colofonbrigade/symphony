@@ -17,6 +17,10 @@ config :core, Web.Endpoint,
   orchestrator: Core.Orchestrator,
   snapshot_timeout_ms: 15_000
 
+config :core, Core.Runtime, cache_reads: true
+
+config :core, Core.StatusDashboard, render: true
+
 config :core, ecto_repos: [Core.Telemetry.Repo]
 
 config :core, Core.Telemetry.Repo,
@@ -25,9 +29,4 @@ config :core, Core.Telemetry.Repo,
   pool_size: 1,
   priv: "priv/telemetry_repo"
 
-if Mix.env() == :test do
-  config :core, Core.Telemetry.Repo,
-    database: ":memory:",
-    pool_size: 1,
-    priv: "priv/telemetry_repo"
-end
+import_config "#{config_env()}.exs"

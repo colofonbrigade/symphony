@@ -68,6 +68,7 @@ defmodule Core.MixProject do
       {:phoenix, "~> 1.8.0"},
       {:phoenix_html, "~> 4.2"},
       {:phoenix_live_view, "~> 1.1.0"},
+      {:process_tree, "~> 0.3"},
       {:req, "~> 0.5"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.12"},

@@ -47,16 +47,14 @@ defmodule Core.SSHTest do
     test_root = Path.join(System.tmp_dir!(), "symphony-ssh-test-#{System.unique_integer([:positive])}")
     trace_file = Path.join(test_root, "ssh.trace")
     previous_path = System.get_env("PATH")
-    previous_ssh_config = Application.get_env(:core, :ssh_config)
 
     on_exit(fn ->
       restore_env("PATH", previous_path)
-      Application.put_env(:core, :ssh_config, previous_ssh_config)
       File.rm_rf(test_root)
     end)
 
     install_fake_ssh!(test_root, trace_file)
-    Application.put_env(:core, :ssh_config, "/tmp/symphony-test-ssh-config")
+    Process.put(:ssh_config, "/tmp/symphony-test-ssh-config")
 
     assert {:ok, {"", 0}} =
              SSH.run("localhost:2222", "echo ready", stderr_to_stdout: true)
@@ -106,11 +104,9 @@ defmodule Core.SSHTest do
     test_root = Path.join(System.tmp_dir!(), "symphony-ssh-port-test-#{System.unique_integer([:positive])}")
     trace_file = Path.join(test_root, "ssh.trace")
     previous_path = System.get_env("PATH")
-    previous_ssh_config = Application.get_env(:core, :ssh_config)
 
     on_exit(fn ->
       restore_env("PATH", previous_path)
-      Application.put_env(:core, :ssh_config, previous_ssh_config)
       File.rm_rf(test_root)
     end)
 
@@ -121,7 +117,7 @@ defmodule Core.SSHTest do
     exit 0
     """)
 
-    Application.delete_env(:core, :ssh_config)
+    Process.delete(:ssh_config)
 
     assert {:ok, port} = SSH.start_port("localhost", "printf ok")
     assert is_port(port)

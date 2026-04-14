@@ -9,7 +9,7 @@ defmodule Core.Workflow do
 
   @spec workflow_file_path() :: Path.t()
   def workflow_file_path do
-    Application.get_env(:core, :workflow_file_path) ||
+    Core.Runtime.get(:workflow_file_path) ||
       Path.join(File.cwd!(), @workflow_file_name)
   end
 

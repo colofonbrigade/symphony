@@ -22,9 +22,9 @@ defmodule Core.LogFile do
 
   @spec configure() :: :ok
   def configure do
-    log_file = Application.get_env(:core, :log_file, default_log_file())
-    max_bytes = Application.get_env(:core, :log_file_max_bytes, @default_max_bytes)
-    max_files = Application.get_env(:core, :log_file_max_files, @default_max_files)
+    log_file = Core.Runtime.get(:log_file, default_log_file())
+    max_bytes = Core.Runtime.get(:log_file_max_bytes, @default_max_bytes)
+    max_files = Core.Runtime.get(:log_file_max_files, @default_max_files)
 
     setup_disk_handler(log_file, max_bytes, max_files)
   end
