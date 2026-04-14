@@ -7,6 +7,7 @@ defmodule Core.MixProject do
       version: "0.1.0",
       elixir: "~> 1.19",
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
+      elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       test_coverage: [
         summary: [
@@ -14,7 +15,7 @@ defmodule Core.MixProject do
         ],
         ignore_modules: [
           Core.Config,
-          Core.Linear.Client,
+          Linear.Client,
           Core.SpecsCheck,
           Core.Orchestrator,
           Core.Orchestrator.State,
@@ -97,4 +98,7 @@ defmodule Core.MixProject do
       path: "bin/symphony"
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 end

@@ -307,7 +307,6 @@ defmodule Core.CoreTest do
   end
 
   test "Core.start_link delegates to the orchestrator" do
-    write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "memory")
     Application.put_env(:core, :memory_tracker_issues, [])
     orchestrator_pid = Process.whereis(Core.Orchestrator)
 

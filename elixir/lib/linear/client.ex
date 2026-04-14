@@ -1,11 +1,12 @@
-defmodule Core.Linear.Client do
+defmodule Linear.Client do
   @moduledoc """
   Thin Linear GraphQL client for polling candidate issues.
   """
 
   require Logger
-  alias Core.{Config, Linear.Issue}
-  alias Core.Linear.ResponseDecoder
+  alias Core.Config
+  alias Linear.ResponseDecoder
+  alias Schema.Tracker.Issue
 
   @issue_page_size 50
   @max_error_body_log_bytes 1_000

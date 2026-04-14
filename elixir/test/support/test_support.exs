@@ -10,8 +10,6 @@ defmodule Core.TestSupport do
       alias Core.Claude.Session
       alias Core.CLI
       alias Core.Config
-      alias Core.Linear.Client
-      alias Core.Linear.Issue
       alias Core.Orchestrator
       alias Core.PromptBuilder
       alias Core.StatusDashboard
@@ -19,6 +17,8 @@ defmodule Core.TestSupport do
       alias Core.Workflow
       alias Core.WorkflowStore
       alias Core.Workspace
+      alias Linear.Client
+      alias Schema.Tracker.Issue
       alias Web.HttpServer
 
       import Core.TestSupport,

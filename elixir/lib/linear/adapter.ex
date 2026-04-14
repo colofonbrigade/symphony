@@ -1,11 +1,11 @@
-defmodule Core.Linear.Adapter do
+defmodule Linear.Adapter do
   @moduledoc """
   Linear-backed tracker adapter.
   """
 
-  @behaviour Core.Tracker
+  @behaviour Linear.Tracker
 
-  alias Core.Linear.Client
+  alias Linear.Client
 
   @create_comment_mutation """
   mutation SymphonyCreateComment($issueId: String!, $body: String!) {

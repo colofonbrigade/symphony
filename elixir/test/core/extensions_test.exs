@@ -4,8 +4,8 @@ defmodule Core.ExtensionsTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
-  alias Core.Linear.Adapter
-  alias Core.Tracker.Memory
+  alias Linear.Adapter
+  alias Test.Tracker.Memory
 
   @endpoint Web.Endpoint
 
@@ -181,13 +181,12 @@ defmodule Core.ExtensionsTest do
     WorkflowStore.force_reload()
   end
 
-  test "tracker delegates to memory and linear adapters" do
+  test "tracker dispatches to the configured adapter" do
     issue = %Issue{id: "issue-1", identifier: "MT-1", state: "In Progress"}
     Application.put_env(:core, :memory_tracker_issues, [issue, %{id: "ignored"}])
     Application.put_env(:core, :memory_tracker_recipient, self())
-    write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "memory")
 
-    assert Config.settings!().tracker.kind == "memory"
+    # config/test.exs pins adapter: Test.Tracker.Memory.
     assert Core.Tracker.adapter() == Memory
     assert {:ok, [^issue]} = Core.Tracker.fetch_candidate_issues()
     assert {:ok, [^issue]} = Core.Tracker.fetch_issues_by_states([" in progress ", 42])
@@ -200,9 +199,6 @@ defmodule Core.ExtensionsTest do
     Application.delete_env(:core, :memory_tracker_recipient)
     assert :ok = Memory.create_comment("issue-1", "quiet")
     assert :ok = Memory.update_issue_state("issue-1", "Quiet")
-
-    write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "linear")
-    assert Core.Tracker.adapter() == Adapter
   end
 
   test "linear adapter delegates reads and validates mutation responses" do

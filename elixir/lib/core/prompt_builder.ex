@@ -7,7 +7,7 @@ defmodule Core.PromptBuilder do
 
   @render_opts [strict_variables: true, strict_filters: true]
 
-  @spec build_prompt(Core.Linear.Issue.t(), keyword()) :: String.t()
+  @spec build_prompt(Schema.Tracker.Issue.t(), keyword()) :: String.t()
   def build_prompt(issue, opts \\ []) do
     template =
       Workflow.current()

@@ -8,9 +8,9 @@ defmodule Core.Orchestrator do
   import Bitwise, only: [<<<: 2]
 
   alias Core.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
-  alias Core.Linear.Issue
   alias Core.Orchestrator.TokenAccounting
   alias Schema.Snapshot
+  alias Schema.Tracker.Issue
 
   @continuation_retry_delay_ms 1_000
   @failure_retry_base_ms 10_000

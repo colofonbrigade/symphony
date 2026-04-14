@@ -1,11 +1,11 @@
-defmodule Core.Linear.ResponseDecoder do
+defmodule Linear.ResponseDecoder do
   @moduledoc """
-  Pure decoders that map Linear GraphQL payloads into `Issue` structs and
-  related value types. Stateless and side-effect free — all HTTP lives in
-  `Linear.Client`.
+  Pure decoders that map Linear GraphQL payloads into `Schema.Tracker.Issue`
+  structs and related value types. Stateless and side-effect free — all HTTP
+  lives in `Linear.Client`.
   """
 
-  alias Core.Linear.Issue
+  alias Schema.Tracker.Issue
 
   @type assignee_filter :: %{configured_assignee: String.t(), match_values: MapSet.t(String.t())} | nil
 

@@ -19,6 +19,8 @@ config :core, Web.Endpoint,
 
 config :core, Core.Runtime, cache_reads: true
 
+config :core, Core.Tracker, adapter: Linear.Adapter
+
 config :core, Core.StatusDashboard, render: true
 
 config :core, ecto_repos: [Core.Telemetry.Repo]

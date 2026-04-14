@@ -1,7 +1,19 @@
-defmodule Core.Linear.Issue do
+defmodule Schema.Tracker.Issue do
   @moduledoc """
-  Normalized Linear issue representation used by the orchestrator.
+  Normalized tracker issue. Producers (tracker adapters such as `Linear`)
+  decode their source-specific payloads into this struct; consumers (Core's
+  orchestrator, prompt builder, memory tracker; Web's presenter) work with
+  `%Schema.Tracker.Issue{}` without knowing which tracker it came from.
+
+  Plain struct + field accessors only. No changesets, no persistence, no
+  cross-boundary calls.
   """
+
+  @type blocker :: %{
+          id: String.t() | nil,
+          identifier: String.t() | nil,
+          state: String.t() | nil
+        }
 
   defstruct [
     :id,
@@ -30,6 +42,7 @@ defmodule Core.Linear.Issue do
           branch_name: String.t() | nil,
           url: String.t() | nil,
           assignee_id: String.t() | nil,
+          blocked_by: [blocker()],
           labels: [String.t()],
           assigned_to_worker: boolean(),
           created_at: DateTime.t() | nil,
@@ -37,7 +50,5 @@ defmodule Core.Linear.Issue do
         }
 
   @spec label_names(t()) :: [String.t()]
-  def label_names(%__MODULE__{labels: labels}) do
-    labels
-  end
+  def label_names(%__MODULE__{labels: labels}), do: labels
 end

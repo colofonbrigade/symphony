@@ -1,11 +1,13 @@
-defmodule Core.Tracker.Memory do
+defmodule Test.Tracker.Memory do
   @moduledoc """
-  In-memory tracker adapter used for tests and local development.
+  In-memory tracker adapter used for tests. Implements `Linear.Tracker` via
+  Application env-driven issue data so tests can exercise `Core.Tracker`
+  dispatch without hitting a real Linear backend.
   """
 
-  @behaviour Core.Tracker
+  @behaviour Linear.Tracker
 
-  alias Core.Linear.Issue
+  alias Schema.Tracker.Issue
 
   @spec fetch_candidate_issues() :: {:ok, [Issue.t()]} | {:error, term()}
   def fetch_candidate_issues do

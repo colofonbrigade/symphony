@@ -1,8 +1,8 @@
 defmodule Core.WorkspaceAndConfigTest do
   use Core.TestSupport
   alias Core.Config.Schema
-  alias Core.Linear.Client
   alias Ecto.Changeset
+  alias Linear.Client
 
   test "workspace bootstrap can be implemented in after_create hook" do
     test_root =

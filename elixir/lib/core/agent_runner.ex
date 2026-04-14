@@ -5,7 +5,8 @@ defmodule Core.AgentRunner do
 
   require Logger
   alias Core.Claude.Session
-  alias Core.{Config, Linear.Issue, PromptBuilder, Tracker, Workspace}
+  alias Core.{Config, PromptBuilder, Tracker, Workspace}
+  alias Schema.Tracker.Issue
 
   @type worker_host :: String.t() | nil
 
