@@ -1,0 +1,180 @@
+defmodule Core.Workflow do
+  @moduledoc """
+  Loads workflow configuration and prompt from WORKFLOW.md.
+  """
+
+  alias Core.WorkflowStore
+
+  @workflow_file_name "WORKFLOW.md"
+
+  @spec workflow_file_path() :: Path.t()
+  def workflow_file_path do
+    Application.get_env(:core, :workflow_file_path) ||
+      Path.join(File.cwd!(), @workflow_file_name)
+  end
+
+  @spec set_workflow_file_path(Path.t()) :: :ok
+  def set_workflow_file_path(path) when is_binary(path) do
+    Application.put_env(:core, :workflow_file_path, path)
+    maybe_reload_store()
+    :ok
+  end
+
+  @spec clear_workflow_file_path() :: :ok
+  def clear_workflow_file_path do
+    Application.delete_env(:core, :workflow_file_path)
+    maybe_reload_store()
+    :ok
+  end
+
+  @type loaded_workflow :: %{
+          config: map(),
+          prompt: String.t(),
+          prompt_template: String.t()
+        }
+
+  @spec current() :: {:ok, loaded_workflow()} | {:error, term()}
+  def current do
+    case Process.whereis(WorkflowStore) do
+      pid when is_pid(pid) ->
+        WorkflowStore.current()
+
+      _ ->
+        load()
+    end
+  end
+
+  @spec load() :: {:ok, loaded_workflow()} | {:error, term()}
+  def load do
+    load(workflow_file_path())
+  end
+
+  @spec load(Path.t()) :: {:ok, loaded_workflow()} | {:error, term()}
+  def load(path) when is_binary(path) do
+    case File.read(path) do
+      {:ok, content} ->
+        parse(content)
+
+      {:error, reason} ->
+        {:error, {:missing_workflow_file, path, reason}}
+    end
+  end
+
+  defp parse(content) do
+    {front_matter_lines, prompt_lines} = split_front_matter(content)
+
+    with {:ok, front_matter} <- front_matter_yaml_to_map(front_matter_lines),
+         {:ok, expanded} <- expand_env_vars(front_matter) do
+      prompt = Enum.join(prompt_lines, "\n") |> String.trim()
+
+      {:ok,
+       %{
+         config: expanded,
+         prompt: prompt,
+         prompt_template: prompt
+       }}
+    else
+      {:error, :workflow_front_matter_not_a_map} ->
+        {:error, :workflow_front_matter_not_a_map}
+
+      {:error, {:missing_env_var, _var_name}} = error ->
+        error
+
+      {:error, reason} ->
+        {:error, {:workflow_parse_error, reason}}
+    end
+  end
+
+  @hooks_keys ~w(hooks)
+
+  @doc false
+  @spec expand_env_vars(map()) :: {:ok, map()} | {:error, {:missing_env_var, String.t()}}
+  def expand_env_vars(config) when is_map(config) do
+    expand_map(config, _inside_hooks? = false)
+  end
+
+  defp expand_map(map, inside_hooks?) when is_map(map) do
+    Enum.reduce_while(map, {:ok, %{}}, fn {key, value}, {:ok, acc} ->
+      child_inside_hooks? = inside_hooks? or key in @hooks_keys
+
+      case expand_value(value, child_inside_hooks?) do
+        {:ok, expanded} -> {:cont, {:ok, Map.put(acc, key, expanded)}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp expand_value(value, true) when is_binary(value), do: {:ok, value}
+
+  defp expand_value(value, false) when is_binary(value) do
+    expand_string(value)
+  end
+
+  defp expand_value(value, inside_hooks?) when is_map(value), do: expand_map(value, inside_hooks?)
+
+  defp expand_value(values, inside_hooks?) when is_list(values) do
+    Enum.reduce_while(values, {:ok, []}, fn item, {:ok, acc} ->
+      case expand_value(item, inside_hooks?) do
+        {:ok, expanded} -> {:cont, {:ok, acc ++ [expanded]}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp expand_value(value, _inside_hooks?), do: {:ok, value}
+
+  @env_var_pattern ~r/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/
+
+  defp expand_string(value) do
+    case Regex.scan(@env_var_pattern, value) do
+      [] -> {:ok, value}
+      matches -> Enum.reduce_while(matches, {:ok, value}, &substitute_match/2)
+    end
+  end
+
+  defp substitute_match([full_match, var_name], {:ok, acc}) do
+    case System.get_env(var_name) do
+      nil -> {:halt, {:error, {:missing_env_var, var_name}}}
+      env_value -> {:cont, {:ok, String.replace(acc, full_match, env_value)}}
+    end
+  end
+
+  defp split_front_matter(content) do
+    lines = String.split(content, ~r/\R/, trim: false)
+
+    case lines do
+      ["---" | tail] ->
+        {front, rest} = Enum.split_while(tail, &(&1 != "---"))
+
+        case rest do
+          ["---" | prompt_lines] -> {front, prompt_lines}
+          _ -> {front, []}
+        end
+
+      _ ->
+        {[], lines}
+    end
+  end
+
+  defp front_matter_yaml_to_map(lines) do
+    yaml = Enum.join(lines, "\n")
+
+    if String.trim(yaml) == "" do
+      {:ok, %{}}
+    else
+      case YamlElixir.read_from_string(yaml) do
+        {:ok, decoded} when is_map(decoded) -> {:ok, decoded}
+        {:ok, _} -> {:error, :workflow_front_matter_not_a_map}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp maybe_reload_store do
+    if Process.whereis(WorkflowStore) do
+      _ = WorkflowStore.force_reload()
+    end
+
+    :ok
+  end
+end

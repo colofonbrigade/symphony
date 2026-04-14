@@ -49,4 +49,4 @@ status.txt
 *.ez
 
 # Ignore package tarball (built via "mix hex.build").
-symphony_elixir-*.tar
+core-*.tar

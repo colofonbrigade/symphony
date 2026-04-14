@@ -1,4 +1,4 @@
-defmodule SymphonyElixir.Telemetry.Repo.Migrations.CreateAgentEvents do
+defmodule Core.Telemetry.Repo.Migrations.CreateAgentEvents do
   use Ecto.Migration
 
   def change do

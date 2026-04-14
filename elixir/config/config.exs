@@ -2,28 +2,28 @@ import Config
 
 config :phoenix, :json_library, Jason
 
-config :symphony_elixir, SymphonyElixirWeb.Endpoint,
+config :core, Web.Endpoint,
   adapter: Bandit.PhoenixAdapter,
   url: [host: "localhost"],
   render_errors: [
-    formats: [html: SymphonyElixirWeb.ErrorHTML, json: SymphonyElixirWeb.ErrorJSON],
+    formats: [html: Web.ErrorHTML, json: Web.ErrorJSON],
     layout: false
   ],
-  pubsub_server: SymphonyElixir.PubSub,
+  pubsub_server: Core.PubSub,
   live_view: [signing_salt: "symphony-live-view"],
   secret_key_base: String.duplicate("s", 64),
   check_origin: false,
   server: false
 
-config :symphony_elixir, ecto_repos: [SymphonyElixir.Telemetry.Repo]
+config :core, ecto_repos: [Core.Telemetry.Repo]
 
-config :symphony_elixir, SymphonyElixir.Telemetry.Repo,
+config :core, Core.Telemetry.Repo,
   database: Path.join(System.user_home!() || System.tmp_dir!(), ".symphony/telemetry.db"),
   journal_mode: :wal,
   pool_size: 1
 
 if Mix.env() == :test do
-  config :symphony_elixir, SymphonyElixir.Telemetry.Repo,
+  config :core, Core.Telemetry.Repo,
     database: ":memory:",
     pool_size: 1
 end
