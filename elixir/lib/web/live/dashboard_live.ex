@@ -5,7 +5,8 @@ defmodule Web.DashboardLive do
 
   use Phoenix.LiveView, layout: {Web.Layouts, :app}
 
-  alias Web.{Endpoint, ObservabilityPubSub, Presenter}
+  alias Core.ObservabilityPubSub
+  alias Web.{Endpoint, Presenter}
   @runtime_tick_ms 1_000
 
   @impl true

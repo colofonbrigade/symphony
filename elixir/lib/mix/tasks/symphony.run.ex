@@ -2,7 +2,6 @@ defmodule Mix.Tasks.Symphony.Run do
   use Mix.Task
 
   alias Core.LogFile
-  alias Core.Workflow
 
   @moduledoc """
   Starts Symphony against a specified workflow file without going through the
@@ -19,8 +18,6 @@ defmodule Mix.Tasks.Symphony.Run do
 
   @impl Mix.Task
   def run(argv) do
-    Mix.Task.run("app.config")
-
     case OptionParser.parse(argv, strict: @switches) do
       {opts, [workflow_path], []} ->
         start(Path.expand(workflow_path), opts)
@@ -37,7 +34,12 @@ defmodule Mix.Tasks.Symphony.Run do
       Mix.raise("Workflow file not found: #{workflow_path}")
     end
 
-    :ok = Workflow.set_workflow_file_path(workflow_path)
+    # Publish the workflow path to runtime.exs via the OS env, then run
+    # app.config so runtime.exs picks it up and populates Application env
+    # (workflow_file_path + derived Web.Endpoint settings).
+    System.put_env("SYMPHONY_WORKFLOW_FILE", workflow_path)
+    Mix.Task.run("app.config")
+
     apply_logs_root(opts)
     apply_port_override(opts)
 

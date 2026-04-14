@@ -13,7 +13,9 @@ config :core, Web.Endpoint,
   live_view: [signing_salt: "symphony-live-view"],
   secret_key_base: String.duplicate("s", 64),
   check_origin: false,
-  server: false
+  server: false,
+  orchestrator: Core.Orchestrator,
+  snapshot_timeout_ms: 15_000
 
 config :core, ecto_repos: [Core.Telemetry.Repo]
 

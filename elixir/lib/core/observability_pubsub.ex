@@ -1,4 +1,4 @@
-defmodule Web.ObservabilityPubSub do
+defmodule Core.ObservabilityPubSub do
   @moduledoc """
   PubSub helpers for observability dashboard updates.
   """

@@ -1,6 +1,8 @@
-defmodule Core.Application do
+defmodule Symphony.Application do
   @moduledoc """
-  OTP application entrypoint that starts core supervisors and workers.
+  OTP application entrypoint. This is the composition root: it wires together
+  children from every boundary (`Core`, `Web`, and their peers) and is the
+  only module allowed to reach across all of them.
   """
 
   use Application
@@ -19,7 +21,7 @@ defmodule Core.Application do
       Telemetry.Writer,
       Core.WorkflowStore,
       Core.Orchestrator,
-      Core.HttpServer,
+      Web.HttpServer,
       Core.StatusDashboard
     ]
 

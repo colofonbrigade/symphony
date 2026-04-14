@@ -52,7 +52,7 @@ defmodule Core.SSH do
   defp maybe_put_line_option(port_opts, line_bytes), do: Keyword.put(port_opts, :line, line_bytes)
 
   defp maybe_put_config(args) do
-    case System.get_env("SYMPHONY_SSH_CONFIG") do
+    case Application.get_env(:core, :ssh_config) do
       config_path when is_binary(config_path) and config_path != "" ->
         args ++ ["-F", config_path]
 

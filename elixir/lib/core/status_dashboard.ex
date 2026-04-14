@@ -6,10 +6,10 @@ defmodule Core.StatusDashboard do
   use GenServer
   require Logger
 
-  alias Core.{Config, HttpServer}
+  alias Core.Config
+  alias Core.ObservabilityPubSub
   alias Core.Orchestrator
   alias Core.StatusDashboard.AgentMessageHumanizer
-  alias Web.ObservabilityPubSub
 
   @minimum_idle_rerender_ms 1_000
   @throughput_window_ms 5_000
@@ -432,20 +432,16 @@ defmodule Core.StatusDashboard do
   defp linear_project_url(project_slug), do: "https://linear.app/project/#{project_slug}/issues"
 
   defp dashboard_url do
-    dashboard_url(Config.settings!().server.host, Config.server_port(), HttpServer.bound_port())
+    dashboard_url(Config.settings!().server.host, Config.server_port())
   end
 
-  defp dashboard_url(_host, nil, _bound_port), do: nil
+  defp dashboard_url(_host, nil), do: nil
 
-  defp dashboard_url(host, configured_port, bound_port) do
-    port = bound_port || configured_port
-
-    if is_integer(port) and port > 0 do
-      "http://#{dashboard_url_host(host)}:#{port}/"
-    else
-      nil
-    end
+  defp dashboard_url(host, port) when is_integer(port) and port > 0 do
+    "http://#{dashboard_url_host(host)}:#{port}/"
   end
+
+  defp dashboard_url(_host, _port), do: nil
 
   defp dashboard_url_host(host) when host in ["0.0.0.0", "::", "[::]", ""], do: "127.0.0.1"
 
@@ -544,10 +540,8 @@ defmodule Core.StatusDashboard do
     do: format_snapshot_content(snapshot_data, tps, terminal_columns)
 
   @doc false
-  @spec dashboard_url_for_test(String.t(), non_neg_integer() | nil, non_neg_integer() | nil) ::
-          String.t() | nil
-  def dashboard_url_for_test(host, configured_port, bound_port),
-    do: dashboard_url(host, configured_port, bound_port)
+  @spec dashboard_url_for_test(String.t(), non_neg_integer() | nil) :: String.t() | nil
+  def dashboard_url_for_test(host, port), do: dashboard_url(host, port)
 
   defp snapshot_payload do
     if Process.whereis(Orchestrator) do

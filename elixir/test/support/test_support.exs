@@ -10,7 +10,6 @@ defmodule Core.TestSupport do
       alias Core.Claude.Session
       alias Core.CLI
       alias Core.Config
-      alias Core.HttpServer
       alias Core.Linear.Client
       alias Core.Linear.Issue
       alias Core.Orchestrator
@@ -20,6 +19,7 @@ defmodule Core.TestSupport do
       alias Core.Workflow
       alias Core.WorkflowStore
       alias Core.Workspace
+      alias Web.HttpServer
 
       import Core.TestSupport,
         only: [write_workflow_file!: 1, write_workflow_file!: 2, restore_env: 2, stop_default_http_server: 0]
@@ -71,11 +71,11 @@ defmodule Core.TestSupport do
 
   def stop_default_http_server do
     case Enum.find(Supervisor.which_children(Core.Supervisor), fn
-           {Core.HttpServer, _pid, _type, _modules} -> true
+           {Web.HttpServer, _pid, _type, _modules} -> true
            _child -> false
          end) do
-      {Core.HttpServer, pid, _type, _modules} when is_pid(pid) ->
-        :ok = Supervisor.terminate_child(Core.Supervisor, Core.HttpServer)
+      {Web.HttpServer, pid, _type, _modules} when is_pid(pid) ->
+        :ok = Supervisor.terminate_child(Core.Supervisor, Web.HttpServer)
 
         if Process.alive?(pid) do
           Process.exit(pid, :normal)

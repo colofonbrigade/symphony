@@ -550,10 +550,10 @@ defmodule Core.LiveE2ETest do
     worker_ports = reserve_tcp_ports(@docker_worker_count)
     worker_hosts = Enum.map(worker_ports, &"localhost:#{&1}")
     project_name = docker_project_name(run_id)
-    previous_ssh_config = System.get_env("SYMPHONY_SSH_CONFIG")
+    previous_ssh_config = Application.get_env(:core, :ssh_config)
 
     base_cleanup = fn ->
-      restore_env("SYMPHONY_SSH_CONFIG", previous_ssh_config)
+      Application.put_env(:core, :ssh_config, previous_ssh_config)
       docker_compose_down(project_name, docker_compose_env(worker_ports, key_path <> ".pub", claude_config_dir))
     end
 
@@ -563,7 +563,7 @@ defmodule Core.LiveE2ETest do
         generate_ssh_keypair!(key_path)
         write_docker_ssh_config!(config_path, key_path)
         write_docker_claude_config!(claude_config_dir)
-        System.put_env("SYMPHONY_SSH_CONFIG", config_path)
+        Application.put_env(:core, :ssh_config, config_path)
 
         docker_compose_up!(project_name, docker_compose_env(worker_ports, key_path <> ".pub", claude_config_dir))
         wait_for_ssh_hosts!(worker_hosts)

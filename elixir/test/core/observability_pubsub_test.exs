@@ -1,7 +1,7 @@
 defmodule Core.ObservabilityPubSubTest do
   use Core.TestSupport
 
-  alias Web.ObservabilityPubSub
+  alias Core.ObservabilityPubSub
 
   test "subscribe and broadcast_update deliver dashboard updates" do
     assert :ok = ObservabilityPubSub.subscribe()

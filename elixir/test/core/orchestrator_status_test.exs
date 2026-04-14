@@ -847,11 +847,11 @@ defmodule Core.OrchestratorStatusTest do
     assert rendered =~ "http://127.0.0.1:4000/"
   end
 
-  test "status dashboard prefers the bound server port and normalizes wildcard hosts" do
-    assert StatusDashboard.dashboard_url_for_test("0.0.0.0", 0, 43_123) ==
+  test "status dashboard normalizes wildcard hosts into a reachable loopback URL" do
+    assert StatusDashboard.dashboard_url_for_test("0.0.0.0", 43_123) ==
              "http://127.0.0.1:43123/"
 
-    assert StatusDashboard.dashboard_url_for_test("::1", 4000, nil) ==
+    assert StatusDashboard.dashboard_url_for_test("::1", 4000) ==
              "http://[::1]:4000/"
   end
 
@@ -1402,7 +1402,7 @@ defmodule Core.OrchestratorStatusTest do
   test "application stop renders offline status" do
     rendered =
       ExUnit.CaptureIO.capture_io(fn ->
-        assert :ok = Core.Application.stop(:normal)
+        assert :ok = Symphony.Application.stop(:normal)
       end)
 
     assert rendered =~ "app_status=offline"

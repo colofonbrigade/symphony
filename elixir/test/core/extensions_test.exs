@@ -607,12 +607,12 @@ defmodule Core.ExtensionsTest do
   end
 
   test "http server serves embedded assets, accepts form posts, and rejects invalid hosts" do
-    spec = HttpServer.child_spec(port: 0)
+    port = 41_000
+    spec = HttpServer.child_spec(port: port)
     assert spec.id == HttpServer
-    assert spec.start == {HttpServer, :start_link, [[port: 0]]}
+    assert spec.start == {HttpServer, :start_link, [[port: port]]}
 
     assert :ignore = HttpServer.start_link(port: nil)
-    assert HttpServer.bound_port() == nil
 
     snapshot = static_snapshot()
     orchestrator_name = Module.concat(__MODULE__, :BoundPortOrchestrator)
@@ -626,7 +626,7 @@ defmodule Core.ExtensionsTest do
 
     server_opts = [
       host: "127.0.0.1",
-      port: 0,
+      port: port,
       orchestrator: orchestrator_name,
       snapshot_timeout_ms: 50
     ]
@@ -634,9 +634,6 @@ defmodule Core.ExtensionsTest do
     start_supervised!({StaticOrchestrator, name: orchestrator_name, snapshot: snapshot, refresh: refresh})
 
     start_supervised!({HttpServer, server_opts})
-
-    port = wait_for_bound_port()
-    assert port == HttpServer.bound_port()
 
     response = Req.get!("http://127.0.0.1:#{port}/api/v1/state")
     assert response.status == 200
@@ -668,7 +665,7 @@ defmodule Core.ExtensionsTest do
     assert method_not_allowed_response.status == 405
     assert method_not_allowed_response.body["error"]["code"] == "method_not_allowed"
 
-    assert {:error, _reason} = HttpServer.start_link(host: "bad host", port: 0)
+    assert {:error, _reason} = HttpServer.start_link(host: "bad host", port: port)
   end
 
   defp start_test_endpoint(overrides) do
@@ -712,14 +709,6 @@ defmodule Core.ExtensionsTest do
       ],
       agent_totals: %{input_tokens: 4, output_tokens: 8, total_tokens: 12, seconds_running: 42.5}
     }
-  end
-
-  defp wait_for_bound_port do
-    assert_eventually(fn ->
-      is_integer(HttpServer.bound_port())
-    end)
-
-    HttpServer.bound_port()
   end
 
   defp assert_eventually(fun, attempts \\ 20)

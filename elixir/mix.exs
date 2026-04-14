@@ -54,7 +54,7 @@ defmodule Core.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      mod: {Core.Application, []},
+      mod: {Symphony.Application, []},
       extra_applications: [:logger]
     ]
   end
