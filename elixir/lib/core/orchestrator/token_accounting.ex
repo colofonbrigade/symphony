@@ -219,6 +219,4 @@ defmodule Core.Orchestrator.TokenAccounting do
       _ -> 0
     end
   end
-
-  defp read_token_count(_usage, _key), do: 0
 end

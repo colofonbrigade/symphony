@@ -61,24 +61,21 @@ cd symphony/elixir
 mise trust
 mise install
 mise exec -- mix setup
-mise exec -- mix build
-mise exec -- ./bin/symphony ./WORKFLOW.md
+mise exec -- mix symphony.run ./WORKFLOW.md
 ```
 
 ## Configuration
 
-Pass a custom workflow file path to `./bin/symphony` when starting the service:
+Pass a workflow file path to `mix symphony.run` when starting the service:
 
 ```bash
-./bin/symphony /path/to/custom/WORKFLOW.md
+mix symphony.run /path/to/custom/WORKFLOW.md
 ```
-
-If no path is passed, Symphony defaults to `./WORKFLOW.md`.
 
 Optional flags:
 
 - `--logs-root` tells Symphony to write logs under a different directory (default: `./log`)
-- `--port` also starts the Phoenix observability service (default: disabled)
+- `--port` overrides the Phoenix observability server port. If omitted, Symphony uses `server.port` from the workflow YAML (TEMPLATE.md ships `4100`); when neither is set, the observability server is disabled. Open `http://<host>:<port>/` for the live dashboard.
 
 The `WORKFLOW.md` file uses YAML front matter for configuration, plus a Markdown body used as the
 Codex session prompt.

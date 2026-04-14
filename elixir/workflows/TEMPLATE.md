@@ -37,6 +37,9 @@ claude:
   model: claude-sonnet-4-6
   permission_mode: bypassPermissions
   effort: high
+server:
+  host: 127.0.0.1
+  port: 4100
 ---
 
 You are working on a Linear ticket `{{ issue.identifier }}`

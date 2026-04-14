@@ -230,8 +230,6 @@ defmodule Core.StatusDashboard.AgentMessageHumanizer do
     |> String.trim()
   end
 
-  defp inline_text(other), do: other |> to_string() |> inline_text()
-
   # Strips ANSI escape sequences (CSI / OSC) and control bytes from agent
   # output. Real `claude` sessions emit colorized output via tools like
   # `ls --color` and `git diff` that would otherwise corrupt the dashboard

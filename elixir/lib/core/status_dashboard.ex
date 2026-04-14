@@ -686,8 +686,6 @@ defmodule Core.StatusDashboard do
     end
   end
 
-  defp rate_limit_header_line(_), do: []
-
   defp rate_limit_status(info) when is_map(info),
     do: Map.get(info, "status") || Map.get(info, :status)
 
