@@ -344,7 +344,11 @@ defmodule Core.WorkspaceAndConfigTest do
       "updatedAt" => "2026-01-02T00:00:00Z"
     }
 
-    issue = Client.normalize_issue_for_test(raw_issue, "user-1")
+    issue =
+      Linear.ResponseDecoder.normalize_issue(
+        raw_issue,
+        %{configured_assignee: "user-1", match_values: MapSet.new(["user-1"])}
+      )
 
     assert issue.blocked_by == [%{id: "issue-2", identifier: "MT-2", state: "In Progress"}]
     assert issue.labels == ["backend"]
@@ -365,24 +369,13 @@ defmodule Core.WorkspaceAndConfigTest do
       }
     }
 
-    issue = Client.normalize_issue_for_test(raw_issue, "user-1")
+    issue =
+      Linear.ResponseDecoder.normalize_issue(
+        raw_issue,
+        %{configured_assignee: "user-1", match_values: MapSet.new(["user-1"])}
+      )
 
     refute issue.assigned_to_worker
-  end
-
-  test "linear client pagination merge helper preserves issue ordering" do
-    issue_page_1 = [
-      %Issue{id: "issue-1", identifier: "MT-1"},
-      %Issue{id: "issue-2", identifier: "MT-2"}
-    ]
-
-    issue_page_2 = [
-      %Issue{id: "issue-3", identifier: "MT-3"}
-    ]
-
-    merged = Client.merge_issue_pages_for_test([issue_page_1, issue_page_2])
-
-    assert Enum.map(merged, & &1.identifier) == ["MT-1", "MT-2", "MT-3"]
   end
 
   test "linear client paginates issue state fetches by id beyond one page" do
