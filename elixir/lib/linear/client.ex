@@ -145,19 +145,32 @@ defmodule Linear.Client do
     end
   end
 
-  @spec fetch_issue_states_by_ids(Linear.Tracker.settings(), [String.t()]) ::
+  @doc """
+  Fetch issue state for a list of issue ids, paginated.
+
+  Options:
+
+    * `:graphql_fun` — a 2-arity function `(query, variables) -> {:ok, body} | {:error, reason}`
+      used in place of the real HTTP path. Skips assignee resolution (the viewer
+      lookup requires a real endpoint) and pages through `ids` using the supplied
+      fun. Used by tests that exercise pagination without hitting Linear.
+  """
+  @spec fetch_issue_states_by_ids(Linear.Tracker.settings(), [String.t()], keyword()) ::
           {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_issue_states_by_ids(settings, issue_ids) when is_list(issue_ids) do
+  def fetch_issue_states_by_ids(settings, issue_ids, opts \\ []) when is_list(issue_ids) do
     ids = Enum.uniq(issue_ids)
 
-    case ids do
-      [] ->
+    case {ids, Keyword.get(opts, :graphql_fun)} do
+      {[], _} ->
         {:ok, []}
 
-      ids ->
+      {ids, nil} ->
         with {:ok, assignee_filter} <- routing_assignee_filter(settings) do
           do_fetch_issue_states(settings, ids, assignee_filter)
         end
+
+      {ids, graphql_fun} when is_function(graphql_fun, 2) ->
+        do_fetch_issue_states_with_fun(ids, nil, graphql_fun)
     end
   end
 
@@ -183,22 +196,6 @@ defmodule Linear.Client do
       {:error, reason} ->
         Logger.error("Linear GraphQL request failed: #{inspect(reason)}")
         {:error, {:linear_api_request, reason}}
-    end
-  end
-
-  @doc false
-  @spec fetch_issue_states_by_ids_for_test([String.t()], (String.t(), map() -> {:ok, map()} | {:error, term()})) ::
-          {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_issue_states_by_ids_for_test(issue_ids, graphql_fun)
-      when is_list(issue_ids) and is_function(graphql_fun, 2) do
-    ids = Enum.uniq(issue_ids)
-
-    case ids do
-      [] ->
-        {:ok, []}
-
-      ids ->
-        do_fetch_issue_states_with_fun(ids, nil, graphql_fun)
     end
   end
 

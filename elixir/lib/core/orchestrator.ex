@@ -311,14 +311,6 @@ defmodule Core.Orchestrator do
   end
 
   @doc false
-  @spec revalidate_issue_for_dispatch_for_test(Issue.t(), ([String.t()] -> term())) ::
-          {:ok, Issue.t()} | {:skip, Issue.t() | :missing} | {:error, term()}
-  def revalidate_issue_for_dispatch_for_test(%Issue{} = issue, issue_fetcher)
-      when is_function(issue_fetcher, 1) do
-    revalidate_issue_for_dispatch(issue, issue_fetcher, terminal_state_set())
-  end
-
-  @doc false
   @spec sort_issues_for_dispatch_for_test([Issue.t()]) :: [Issue.t()]
   def sort_issues_for_dispatch_for_test(issues) when is_list(issues) do
     sort_issues_for_dispatch(issues)
@@ -739,8 +731,21 @@ defmodule Core.Orchestrator do
     end
   end
 
-  defp revalidate_issue_for_dispatch(%Issue{id: issue_id}, issue_fetcher, terminal_states)
-       when is_binary(issue_id) and is_function(issue_fetcher, 1) do
+  @doc """
+  Re-fetch an issue by id through `issue_fetcher` and decide whether it's
+  still dispatchable. Returns `{:ok, refreshed}` when dispatchable,
+  `{:skip, refreshed}` when the refreshed issue is no longer a retry
+  candidate (e.g. picked up a non-terminal blocker), `{:skip, :missing}`
+  when the tracker no longer returns it, or `{:error, reason}` on fetch
+  failure. Non-Issue inputs pass through as `{:ok, issue}`.
+
+  `terminal_states` is a `MapSet` of terminal state name strings; production
+  callers pass `terminal_state_set/0`, tests supply their own.
+  """
+  @spec revalidate_issue_for_dispatch(Issue.t() | term(), ([String.t()] -> term()), MapSet.t()) ::
+          {:ok, Issue.t()} | {:skip, Issue.t() | :missing} | {:error, term()}
+  def revalidate_issue_for_dispatch(%Issue{id: issue_id}, issue_fetcher, terminal_states)
+      when is_binary(issue_id) and is_function(issue_fetcher, 1) do
     case issue_fetcher.([issue_id]) do
       {:ok, [%Issue{} = refreshed_issue | _]} ->
         if retry_candidate_issue?(refreshed_issue, terminal_states) do
@@ -757,7 +762,7 @@ defmodule Core.Orchestrator do
     end
   end
 
-  defp revalidate_issue_for_dispatch(issue, _issue_fetcher, _terminal_states), do: {:ok, issue}
+  def revalidate_issue_for_dispatch(issue, _issue_fetcher, _terminal_states), do: {:ok, issue}
 
   defp complete_issue(%State{} = state, issue_id) do
     %{

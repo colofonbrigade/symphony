@@ -411,7 +411,7 @@ defmodule Core.WorkspaceAndConfigTest do
       {:ok, body}
     end
 
-    assert {:ok, issues} = Client.fetch_issue_states_by_ids_for_test(issue_ids, graphql_fun)
+    assert {:ok, issues} = Client.fetch_issue_states_by_ids(%{}, issue_ids, graphql_fun: graphql_fun)
 
     assert Enum.map(issues, & &1.id) == issue_ids
 
@@ -569,9 +569,10 @@ defmodule Core.WorkspaceAndConfigTest do
     }
 
     fetcher = fn ["blocked-2"] -> {:ok, [refreshed_issue]} end
+    terminal_states = MapSet.new(["Closed", "Cancelled", "Canceled", "Duplicate", "Done"])
 
     assert {:skip, %Issue{} = skipped_issue} =
-             Orchestrator.revalidate_issue_for_dispatch_for_test(stale_issue, fetcher)
+             Orchestrator.revalidate_issue_for_dispatch(stale_issue, fetcher, terminal_states)
 
     assert skipped_issue.identifier == "MT-1005"
     assert skipped_issue.blocked_by == [%{id: "blocker-3", identifier: "MT-1006", state: "In Progress"}]
