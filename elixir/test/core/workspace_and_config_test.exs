@@ -433,6 +433,7 @@ defmodule Core.WorkspaceAndConfigTest do
       ExUnit.CaptureLog.capture_log(fn ->
         assert {:error, {:linear_api_status, 400}} =
                  Client.graphql(
+                   %{api_key: "test-token"},
                    "query Viewer { viewer { id } }",
                    %{},
                    request_fun: fn _payload, _headers ->

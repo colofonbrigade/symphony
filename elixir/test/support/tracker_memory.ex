@@ -3,19 +3,22 @@ defmodule Test.Tracker.Memory do
   In-memory tracker adapter used for tests. Implements `Linear.Tracker` via
   Application env-driven issue data so tests can exercise `Core.Tracker`
   dispatch without hitting a real Linear backend.
+
+  The `settings` argument on each callback is ignored — Memory reads its
+  issue list from `:memory_tracker_issues` in Application env.
   """
 
   @behaviour Linear.Tracker
 
   alias Schema.Tracker.Issue
 
-  @spec fetch_candidate_issues() :: {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_candidate_issues do
+  @impl Linear.Tracker
+  def fetch_candidate_issues(_settings) do
     {:ok, issue_entries()}
   end
 
-  @spec fetch_issues_by_states([String.t()]) :: {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_issues_by_states(state_names) do
+  @impl Linear.Tracker
+  def fetch_issues_by_states(_settings, state_names) do
     normalized_states =
       state_names
       |> Enum.map(&normalize_state/1)
@@ -27,8 +30,8 @@ defmodule Test.Tracker.Memory do
      end)}
   end
 
-  @spec fetch_issue_states_by_ids([String.t()]) :: {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_issue_states_by_ids(issue_ids) do
+  @impl Linear.Tracker
+  def fetch_issue_states_by_ids(_settings, issue_ids) do
     wanted_ids = MapSet.new(issue_ids)
 
     {:ok,
@@ -37,31 +40,12 @@ defmodule Test.Tracker.Memory do
      end)}
   end
 
-  @spec create_comment(String.t(), String.t()) :: :ok | {:error, term()}
-  def create_comment(issue_id, body) do
-    send_event({:memory_tracker_comment, issue_id, body})
-    :ok
-  end
-
-  @spec update_issue_state(String.t(), String.t()) :: :ok | {:error, term()}
-  def update_issue_state(issue_id, state_name) do
-    send_event({:memory_tracker_state_update, issue_id, state_name})
-    :ok
-  end
-
   defp configured_issues do
     Application.get_env(:core, :memory_tracker_issues, [])
   end
 
   defp issue_entries do
     Enum.filter(configured_issues(), &match?(%Issue{}, &1))
-  end
-
-  defp send_event(message) do
-    case Application.get_env(:core, :memory_tracker_recipient) do
-      pid when is_pid(pid) -> send(pid, message)
-      _ -> :ok
-    end
   end
 
   defp normalize_state(state) when is_binary(state) do

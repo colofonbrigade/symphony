@@ -4,7 +4,6 @@ defmodule Linear.Client do
   """
 
   require Logger
-  alias Core.Config
   alias Linear.ResponseDecoder
   alias Schema.Tracker.Issue
 
@@ -105,50 +104,50 @@ defmodule Linear.Client do
   }
   """
 
-  @spec fetch_candidate_issues() :: {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_candidate_issues do
-    tracker = Config.settings!().tracker
-    project_slug = tracker.project_slug
+  @spec fetch_candidate_issues(Linear.Tracker.settings()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_candidate_issues(settings) do
+    project_slug = Map.get(settings, :project_slug)
 
     cond do
-      is_nil(tracker.api_key) ->
+      is_nil(Map.get(settings, :api_key)) ->
         {:error, :missing_linear_api_token}
 
       is_nil(project_slug) ->
         {:error, :missing_linear_project_slug}
 
       true ->
-        with {:ok, assignee_filter} <- routing_assignee_filter() do
-          do_fetch_by_states(project_slug, tracker.active_states, assignee_filter)
+        with {:ok, assignee_filter} <- routing_assignee_filter(settings) do
+          do_fetch_by_states(settings, project_slug, Map.get(settings, :active_states, []), assignee_filter)
         end
     end
   end
 
-  @spec fetch_issues_by_states([String.t()]) :: {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_issues_by_states(state_names) when is_list(state_names) do
+  @spec fetch_issues_by_states(Linear.Tracker.settings(), [String.t()]) ::
+          {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_issues_by_states(settings, state_names) when is_list(state_names) do
     normalized_states = Enum.map(state_names, &to_string/1) |> Enum.uniq()
 
     if normalized_states == [] do
       {:ok, []}
     else
-      tracker = Config.settings!().tracker
-      project_slug = tracker.project_slug
+      project_slug = Map.get(settings, :project_slug)
 
       cond do
-        is_nil(tracker.api_key) ->
+        is_nil(Map.get(settings, :api_key)) ->
           {:error, :missing_linear_api_token}
 
         is_nil(project_slug) ->
           {:error, :missing_linear_project_slug}
 
         true ->
-          do_fetch_by_states(project_slug, normalized_states, nil)
+          do_fetch_by_states(settings, project_slug, normalized_states, nil)
       end
     end
   end
 
-  @spec fetch_issue_states_by_ids([String.t()]) :: {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_issue_states_by_ids(issue_ids) when is_list(issue_ids) do
+  @spec fetch_issue_states_by_ids(Linear.Tracker.settings(), [String.t()]) ::
+          {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_issue_states_by_ids(settings, issue_ids) when is_list(issue_ids) do
     ids = Enum.uniq(issue_ids)
 
     case ids do
@@ -156,19 +155,20 @@ defmodule Linear.Client do
         {:ok, []}
 
       ids ->
-        with {:ok, assignee_filter} <- routing_assignee_filter() do
-          do_fetch_issue_states(ids, assignee_filter)
+        with {:ok, assignee_filter} <- routing_assignee_filter(settings) do
+          do_fetch_issue_states(settings, ids, assignee_filter)
         end
     end
   end
 
-  @spec graphql(String.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
-  def graphql(query, variables \\ %{}, opts \\ [])
+  @spec graphql(Linear.Tracker.settings(), String.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def graphql(settings, query, variables \\ %{}, opts \\ [])
       when is_binary(query) and is_map(variables) and is_list(opts) do
     payload = build_graphql_payload(query, variables, Keyword.get(opts, :operation_name))
-    request_fun = Keyword.get(opts, :request_fun, &post_graphql_request/2)
+    request_fun = Keyword.get(opts, :request_fun, &post_graphql_request(settings, &1, &2))
 
-    with {:ok, headers} <- graphql_headers(),
+    with {:ok, headers} <- graphql_headers(settings),
          {:ok, %{status: 200, body: body}} <- request_fun.(payload, headers) do
       {:ok, body}
     else
@@ -198,7 +198,7 @@ defmodule Linear.Client do
     assignee_filter =
       case assignee do
         value when is_binary(value) ->
-          case build_assignee_filter(value) do
+          case build_assignee_filter(%{}, value) do
             {:ok, filter} -> filter
             {:error, _reason} -> nil
           end
@@ -235,17 +235,17 @@ defmodule Linear.Client do
         {:ok, []}
 
       ids ->
-        do_fetch_issue_states(ids, nil, graphql_fun)
+        do_fetch_issue_states_with_fun(ids, nil, graphql_fun)
     end
   end
 
-  defp do_fetch_by_states(project_slug, state_names, assignee_filter) do
-    do_fetch_by_states_page(project_slug, state_names, assignee_filter, nil, [])
+  defp do_fetch_by_states(settings, project_slug, state_names, assignee_filter) do
+    do_fetch_by_states_page(settings, project_slug, state_names, assignee_filter, nil, [])
   end
 
-  defp do_fetch_by_states_page(project_slug, state_names, assignee_filter, after_cursor, acc_issues) do
+  defp do_fetch_by_states_page(settings, project_slug, state_names, assignee_filter, after_cursor, acc_issues) do
     with {:ok, body} <-
-           graphql(@query, %{
+           graphql(settings, @query, %{
              projectSlug: project_slug,
              stateNames: state_names,
              first: @issue_page_size,
@@ -257,7 +257,7 @@ defmodule Linear.Client do
 
       case ResponseDecoder.next_page_cursor(page_info) do
         {:ok, next_cursor} ->
-          do_fetch_by_states_page(project_slug, state_names, assignee_filter, next_cursor, updated_acc)
+          do_fetch_by_states_page(settings, project_slug, state_names, assignee_filter, next_cursor, updated_acc)
 
         :done ->
           {:ok, finalize_paginated_issues(updated_acc)}
@@ -274,11 +274,11 @@ defmodule Linear.Client do
 
   defp finalize_paginated_issues(acc_issues) when is_list(acc_issues), do: Enum.reverse(acc_issues)
 
-  defp do_fetch_issue_states(ids, assignee_filter) do
-    do_fetch_issue_states(ids, assignee_filter, &graphql/2)
+  defp do_fetch_issue_states(settings, ids, assignee_filter) do
+    do_fetch_issue_states_with_fun(ids, assignee_filter, &graphql(settings, &1, &2))
   end
 
-  defp do_fetch_issue_states(ids, assignee_filter, graphql_fun)
+  defp do_fetch_issue_states_with_fun(ids, assignee_filter, graphql_fun)
        when is_list(ids) and is_function(graphql_fun, 2) do
     issue_order_index = issue_order_index(ids)
     do_fetch_issue_states_page(ids, assignee_filter, graphql_fun, [], issue_order_index)
@@ -383,8 +383,8 @@ defmodule Linear.Client do
     end
   end
 
-  defp graphql_headers do
-    case Config.settings!().tracker.api_key do
+  defp graphql_headers(settings) do
+    case Map.get(settings, :api_key) do
       nil ->
         {:error, :missing_linear_api_token}
 
@@ -397,39 +397,39 @@ defmodule Linear.Client do
     end
   end
 
-  defp post_graphql_request(payload, headers) do
-    Req.post(Config.settings!().tracker.endpoint,
+  defp post_graphql_request(settings, payload, headers) do
+    Req.post(Map.get(settings, :endpoint),
       headers: headers,
       json: payload,
       connect_options: [timeout: 30_000]
     )
   end
 
-  defp routing_assignee_filter do
-    case Config.settings!().tracker.assignee do
+  defp routing_assignee_filter(settings) do
+    case Map.get(settings, :assignee) do
       nil ->
         {:ok, nil}
 
       assignee ->
-        build_assignee_filter(assignee)
+        build_assignee_filter(settings, assignee)
     end
   end
 
-  defp build_assignee_filter(assignee) when is_binary(assignee) do
+  defp build_assignee_filter(settings, assignee) when is_binary(assignee) do
     case ResponseDecoder.normalize_assignee_match_value(assignee) do
       nil ->
         {:ok, nil}
 
       "me" ->
-        resolve_viewer_assignee_filter()
+        resolve_viewer_assignee_filter(settings)
 
       normalized ->
         {:ok, %{configured_assignee: assignee, match_values: MapSet.new([normalized])}}
     end
   end
 
-  defp resolve_viewer_assignee_filter do
-    case graphql(@viewer_query, %{}) do
+  defp resolve_viewer_assignee_filter(settings) do
+    case graphql(settings, @viewer_query, %{}) do
       {:ok, %{"data" => %{"viewer" => viewer}}} when is_map(viewer) ->
         case ResponseDecoder.assignee_id(viewer) do
           nil ->

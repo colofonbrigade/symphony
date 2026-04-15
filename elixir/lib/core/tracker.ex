@@ -1,6 +1,8 @@
 defmodule Core.Tracker do
   @moduledoc """
-  Dispatches tracker reads and writes to the configured adapter.
+  Dispatches tracker reads and writes to the configured adapter, threading
+  tracker settings (api_key, endpoint, project_slug, active_states,
+  assignee) in on every call.
 
   The adapter contract lives in `Linear.Tracker`; `Linear.Adapter` is the
   production implementer wired in by `config/config.exs`. `config/test.exs`
@@ -8,24 +10,32 @@ defmodule Core.Tracker do
   Linear backend.
   """
 
+  alias Core.Config
+
   @spec fetch_candidate_issues() :: {:ok, [term()]} | {:error, term()}
-  def fetch_candidate_issues, do: adapter().fetch_candidate_issues()
+  def fetch_candidate_issues, do: adapter().fetch_candidate_issues(settings())
 
   @spec fetch_issues_by_states([String.t()]) :: {:ok, [term()]} | {:error, term()}
-  def fetch_issues_by_states(states), do: adapter().fetch_issues_by_states(states)
+  def fetch_issues_by_states(states), do: adapter().fetch_issues_by_states(settings(), states)
 
   @spec fetch_issue_states_by_ids([String.t()]) :: {:ok, [term()]} | {:error, term()}
-  def fetch_issue_states_by_ids(issue_ids), do: adapter().fetch_issue_states_by_ids(issue_ids)
-
-  @spec create_comment(String.t(), String.t()) :: :ok | {:error, term()}
-  def create_comment(issue_id, body), do: adapter().create_comment(issue_id, body)
-
-  @spec update_issue_state(String.t(), String.t()) :: :ok | {:error, term()}
-  def update_issue_state(issue_id, state_name),
-    do: adapter().update_issue_state(issue_id, state_name)
+  def fetch_issue_states_by_ids(issue_ids),
+    do: adapter().fetch_issue_states_by_ids(settings(), issue_ids)
 
   @spec adapter() :: module()
   def adapter do
     Application.fetch_env!(:core, __MODULE__)[:adapter]
+  end
+
+  defp settings do
+    tracker = Config.settings!().tracker
+
+    %{
+      api_key: tracker.api_key,
+      endpoint: tracker.endpoint,
+      project_slug: tracker.project_slug,
+      active_states: tracker.active_states,
+      assignee: tracker.assignee
+    }
   end
 end

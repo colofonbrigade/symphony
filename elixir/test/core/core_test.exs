@@ -330,7 +330,7 @@ defmodule Core.CoreTest do
   end
 
   test "linear issue state reconciliation fetch with no running issues is a no-op" do
-    assert {:ok, []} = Client.fetch_issue_states_by_ids([])
+    assert {:ok, []} = Client.fetch_issue_states_by_ids(%{}, [])
   end
 
   test "non-active issue state stops running agent without cleaning workspace" do
@@ -869,7 +869,7 @@ defmodule Core.CoreTest do
   defp restore_app_env(key, value), do: Application.put_env(:core, key, value)
 
   test "fetch issues by states with empty state set is a no-op" do
-    assert {:ok, []} = Client.fetch_issues_by_states([])
+    assert {:ok, []} = Client.fetch_issues_by_states(%{}, [])
   end
 
   test "prompt builder renders issue and attempt values from workflow template" do

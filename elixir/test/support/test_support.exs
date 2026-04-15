@@ -42,7 +42,6 @@ defmodule Core.TestSupport do
           Application.delete_env(:core, :workflow_file_path)
           Application.delete_env(:core, :server_port_override)
           Application.delete_env(:core, :memory_tracker_issues)
-          Application.delete_env(:core, :memory_tracker_recipient)
           File.rm_rf(workflow_root)
         end)
 

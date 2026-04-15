@@ -10,32 +10,19 @@ defmodule Core.ExtensionsTest do
   @endpoint Web.Endpoint
 
   defmodule FakeLinearClient do
-    def fetch_candidate_issues do
+    def fetch_candidate_issues(_settings) do
       send(self(), :fetch_candidate_issues_called)
       {:ok, [:candidate]}
     end
 
-    def fetch_issues_by_states(states) do
+    def fetch_issues_by_states(_settings, states) do
       send(self(), {:fetch_issues_by_states_called, states})
       {:ok, states}
     end
 
-    def fetch_issue_states_by_ids(issue_ids) do
+    def fetch_issue_states_by_ids(_settings, issue_ids) do
       send(self(), {:fetch_issue_states_by_ids_called, issue_ids})
       {:ok, issue_ids}
-    end
-
-    def graphql(query, variables) do
-      send(self(), {:graphql_called, query, variables})
-
-      case Process.get({__MODULE__, :graphql_results}) do
-        [result | rest] ->
-          Process.put({__MODULE__, :graphql_results}, rest)
-          result
-
-        _ ->
-          Process.get({__MODULE__, :graphql_result})
-      end
     end
   end
 
@@ -184,135 +171,26 @@ defmodule Core.ExtensionsTest do
   test "tracker dispatches to the configured adapter" do
     issue = %Issue{id: "issue-1", identifier: "MT-1", state: "In Progress"}
     Application.put_env(:core, :memory_tracker_issues, [issue, %{id: "ignored"}])
-    Application.put_env(:core, :memory_tracker_recipient, self())
 
     # config/test.exs pins adapter: Test.Tracker.Memory.
     assert Core.Tracker.adapter() == Memory
     assert {:ok, [^issue]} = Core.Tracker.fetch_candidate_issues()
     assert {:ok, [^issue]} = Core.Tracker.fetch_issues_by_states([" in progress ", 42])
     assert {:ok, [^issue]} = Core.Tracker.fetch_issue_states_by_ids(["issue-1"])
-    assert :ok = Core.Tracker.create_comment("issue-1", "comment")
-    assert :ok = Core.Tracker.update_issue_state("issue-1", "Done")
-    assert_receive {:memory_tracker_comment, "issue-1", "comment"}
-    assert_receive {:memory_tracker_state_update, "issue-1", "Done"}
-
-    Application.delete_env(:core, :memory_tracker_recipient)
-    assert :ok = Memory.create_comment("issue-1", "quiet")
-    assert :ok = Memory.update_issue_state("issue-1", "Quiet")
   end
 
-  test "linear adapter delegates reads and validates mutation responses" do
+  test "linear adapter delegates read calls to the configured client" do
     Application.put_env(:core, :linear_client_module, FakeLinearClient)
+    settings = %{}
 
-    assert {:ok, [:candidate]} = Adapter.fetch_candidate_issues()
+    assert {:ok, [:candidate]} = Adapter.fetch_candidate_issues(settings)
     assert_receive :fetch_candidate_issues_called
 
-    assert {:ok, ["Todo"]} = Adapter.fetch_issues_by_states(["Todo"])
+    assert {:ok, ["Todo"]} = Adapter.fetch_issues_by_states(settings, ["Todo"])
     assert_receive {:fetch_issues_by_states_called, ["Todo"]}
 
-    assert {:ok, ["issue-1"]} = Adapter.fetch_issue_states_by_ids(["issue-1"])
+    assert {:ok, ["issue-1"]} = Adapter.fetch_issue_states_by_ids(settings, ["issue-1"])
     assert_receive {:fetch_issue_states_by_ids_called, ["issue-1"]}
-
-    Process.put(
-      {FakeLinearClient, :graphql_result},
-      {:ok, %{"data" => %{"commentCreate" => %{"success" => true}}}}
-    )
-
-    assert :ok = Adapter.create_comment("issue-1", "hello")
-    assert_receive {:graphql_called, create_comment_query, %{body: "hello", issueId: "issue-1"}}
-    assert create_comment_query =~ "commentCreate"
-
-    Process.put(
-      {FakeLinearClient, :graphql_result},
-      {:ok, %{"data" => %{"commentCreate" => %{"success" => false}}}}
-    )
-
-    assert {:error, :comment_create_failed} =
-             Adapter.create_comment("issue-1", "broken")
-
-    Process.put({FakeLinearClient, :graphql_result}, {:error, :boom})
-
-    assert {:error, :boom} = Adapter.create_comment("issue-1", "boom")
-
-    Process.put({FakeLinearClient, :graphql_result}, {:ok, %{"data" => %{}}})
-    assert {:error, :comment_create_failed} = Adapter.create_comment("issue-1", "weird")
-
-    Process.put({FakeLinearClient, :graphql_result}, :unexpected)
-    assert {:error, :comment_create_failed} = Adapter.create_comment("issue-1", "odd")
-
-    Process.put(
-      {FakeLinearClient, :graphql_results},
-      [
-        {:ok,
-         %{
-           "data" => %{
-             "issue" => %{"team" => %{"states" => %{"nodes" => [%{"id" => "state-1"}]}}}
-           }
-         }},
-        {:ok, %{"data" => %{"issueUpdate" => %{"success" => true}}}}
-      ]
-    )
-
-    assert :ok = Adapter.update_issue_state("issue-1", "Done")
-    assert_receive {:graphql_called, state_lookup_query, %{issueId: "issue-1", stateName: "Done"}}
-    assert state_lookup_query =~ "states"
-
-    assert_receive {:graphql_called, update_issue_query, %{issueId: "issue-1", stateId: "state-1"}}
-
-    assert update_issue_query =~ "issueUpdate"
-
-    Process.put(
-      {FakeLinearClient, :graphql_results},
-      [
-        {:ok,
-         %{
-           "data" => %{
-             "issue" => %{"team" => %{"states" => %{"nodes" => [%{"id" => "state-1"}]}}}
-           }
-         }},
-        {:ok, %{"data" => %{"issueUpdate" => %{"success" => false}}}}
-      ]
-    )
-
-    assert {:error, :issue_update_failed} =
-             Adapter.update_issue_state("issue-1", "Broken")
-
-    Process.put({FakeLinearClient, :graphql_results}, [{:error, :boom}])
-
-    assert {:error, :boom} = Adapter.update_issue_state("issue-1", "Boom")
-
-    Process.put({FakeLinearClient, :graphql_results}, [{:ok, %{"data" => %{}}}])
-    assert {:error, :state_not_found} = Adapter.update_issue_state("issue-1", "Missing")
-
-    Process.put(
-      {FakeLinearClient, :graphql_results},
-      [
-        {:ok,
-         %{
-           "data" => %{
-             "issue" => %{"team" => %{"states" => %{"nodes" => [%{"id" => "state-1"}]}}}
-           }
-         }},
-        {:ok, %{"data" => %{}}}
-      ]
-    )
-
-    assert {:error, :issue_update_failed} = Adapter.update_issue_state("issue-1", "Weird")
-
-    Process.put(
-      {FakeLinearClient, :graphql_results},
-      [
-        {:ok,
-         %{
-           "data" => %{
-             "issue" => %{"team" => %{"states" => %{"nodes" => [%{"id" => "state-1"}]}}}
-           }
-         }},
-        :unexpected
-      ]
-    )
-
-    assert {:error, :issue_update_failed} = Adapter.update_issue_state("issue-1", "Odd")
   end
 
   test "phoenix observability api preserves state, issue, and refresh responses" do
@@ -664,7 +542,7 @@ defmodule Core.ExtensionsTest do
     assert {:error, _reason} = HttpServer.start_link(host: "bad host", port: port)
   end
 
-  defp start_test_endpoint(overrides \\ []) do
+  defp start_test_endpoint(overrides) do
     endpoint_config =
       :core
       |> Application.get_env(Web.Endpoint, [])
