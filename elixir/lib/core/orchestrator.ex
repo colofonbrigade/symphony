@@ -35,6 +35,8 @@ defmodule Core.Orchestrator do
       retry_attempts: %{},
       agent_totals: nil
     ]
+
+    @type t :: %__MODULE__{}
   end
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -294,32 +296,25 @@ defmodule Core.Orchestrator do
     end
   end
 
-  @doc false
-  @spec reconcile_issue_states_for_test([Issue.t()], term()) :: term()
-  def reconcile_issue_states_for_test(issues, %State{} = state) when is_list(issues) do
+  @doc """
+  Apply tracker-state updates to an orchestrator `State`, stopping agents
+  whose issues moved to a terminal or non-active state and releasing their
+  claims. Pure: the returned state is a new map; no processes are spawned.
+  Reads the active/terminal state names from Config.
+  """
+  @spec reconcile_issue_states([Issue.t()], State.t()) :: State.t()
+  def reconcile_issue_states(issues, %State{} = state) when is_list(issues) do
     reconcile_running_issue_states(issues, state, active_state_set(), terminal_state_set())
   end
 
-  def reconcile_issue_states_for_test(issues, state) when is_list(issues) do
-    reconcile_running_issue_states(issues, state, active_state_set(), terminal_state_set())
-  end
-
-  @doc false
-  @spec should_dispatch_issue_for_test(Issue.t(), term()) :: boolean()
-  def should_dispatch_issue_for_test(%Issue{} = issue, %State{} = state) do
+  @doc """
+  Return `true` when the given `Issue` is eligible for dispatch against the
+  current `State` (respects max_concurrent_agents, active-state filter,
+  assignee routing, and the non-terminal-blocker gate).
+  """
+  @spec dispatch_eligible?(Issue.t(), State.t()) :: boolean()
+  def dispatch_eligible?(%Issue{} = issue, %State{} = state) do
     should_dispatch_issue?(issue, state, active_state_set(), terminal_state_set())
-  end
-
-  @doc false
-  @spec sort_issues_for_dispatch_for_test([Issue.t()]) :: [Issue.t()]
-  def sort_issues_for_dispatch_for_test(issues) when is_list(issues) do
-    sort_issues_for_dispatch(issues)
-  end
-
-  @doc false
-  @spec select_worker_host_for_test(term(), String.t() | nil) :: String.t() | nil | :no_worker_capacity
-  def select_worker_host_for_test(%State{} = state, preferred_worker_host) do
-    select_worker_host(state, preferred_worker_host)
   end
 
   defp reconcile_running_issue_states([], state, _active_states, _terminal_states), do: state
@@ -518,7 +513,12 @@ defmodule Core.Orchestrator do
     end)
   end
 
-  defp sort_issues_for_dispatch(issues) when is_list(issues) do
+  @doc """
+  Sort a list of candidate issues by dispatch priority (priority, then
+  created_at ascending), producing the order the orchestrator will attempt.
+  """
+  @spec sort_issues_for_dispatch([Issue.t()]) :: [Issue.t()]
+  def sort_issues_for_dispatch(issues) when is_list(issues) do
     Enum.sort_by(issues, fn
       %Issue{} = issue ->
         {priority_rank(issue.priority), issue_created_at_sort_key(issue), issue.identifier || issue.id || ""}
@@ -972,7 +972,15 @@ defmodule Core.Orchestrator do
     Map.put(running_entry, key, value)
   end
 
-  defp select_worker_host(%State{} = state, preferred_worker_host) do
+  @doc """
+  Pick a worker host for a new agent, respecting per-host concurrency caps.
+  Returns the preferred host when it has capacity, otherwise the least-loaded
+  eligible host, or `:no_worker_capacity` when every host is full. Returns
+  `nil` when the pool is unconfigured (local-only mode).
+  """
+  @spec select_worker_host(State.t(), String.t() | nil) ::
+          String.t() | nil | :no_worker_capacity
+  def select_worker_host(%State{} = state, preferred_worker_host) do
     case Config.settings!().worker.ssh_hosts do
       [] ->
         nil

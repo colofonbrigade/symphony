@@ -480,7 +480,7 @@ defmodule Core.WorkspaceAndConfigTest do
     }
 
     sorted =
-      Orchestrator.sort_issues_for_dispatch_for_test([
+      Orchestrator.sort_issues_for_dispatch([
         issue_lower_priority_older,
         issue_same_priority_newer,
         issue_same_priority_older
@@ -506,7 +506,7 @@ defmodule Core.WorkspaceAndConfigTest do
       blocked_by: [%{id: "blocker-1", identifier: "MT-1002", state: "In Progress"}]
     }
 
-    refute Orchestrator.should_dispatch_issue_for_test(issue, state)
+    refute Orchestrator.dispatch_eligible?(issue, state)
   end
 
   test "issue assigned to another worker is not dispatch-eligible" do
@@ -528,7 +528,7 @@ defmodule Core.WorkspaceAndConfigTest do
       assigned_to_worker: false
     }
 
-    refute Orchestrator.should_dispatch_issue_for_test(issue, state)
+    refute Orchestrator.dispatch_eligible?(issue, state)
   end
 
   test "todo issue with terminal blockers remains dispatch-eligible" do
@@ -548,7 +548,7 @@ defmodule Core.WorkspaceAndConfigTest do
       blocked_by: [%{id: "blocker-2", identifier: "MT-1004", state: "Closed"}]
     }
 
-    assert Orchestrator.should_dispatch_issue_for_test(issue, state)
+    assert Orchestrator.dispatch_eligible?(issue, state)
   end
 
   test "dispatch revalidation skips stale todo issue once a non-terminal blocker appears" do

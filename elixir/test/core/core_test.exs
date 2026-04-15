@@ -385,7 +385,7 @@ defmodule Core.CoreTest do
         labels: []
       }
 
-      updated_state = Orchestrator.reconcile_issue_states_for_test([issue], state)
+      updated_state = Orchestrator.reconcile_issue_states([issue], state)
 
       refute Map.has_key?(updated_state.running, issue_id)
       refute MapSet.member?(updated_state.claimed, issue_id)
@@ -448,7 +448,7 @@ defmodule Core.CoreTest do
         labels: []
       }
 
-      updated_state = Orchestrator.reconcile_issue_states_for_test([issue], state)
+      updated_state = Orchestrator.reconcile_issue_states([issue], state)
 
       refute Map.has_key?(updated_state.running, issue_id)
       refute MapSet.member?(updated_state.claimed, issue_id)
@@ -568,7 +568,7 @@ defmodule Core.CoreTest do
       labels: []
     }
 
-    updated_state = Orchestrator.reconcile_issue_states_for_test([issue], state)
+    updated_state = Orchestrator.reconcile_issue_states([issue], state)
     updated_entry = updated_state.running[issue_id]
 
     assert Map.has_key?(updated_state.running, issue_id)
@@ -616,7 +616,7 @@ defmodule Core.CoreTest do
       assigned_to_worker: false
     }
 
-    updated_state = Orchestrator.reconcile_issue_states_for_test([issue], state)
+    updated_state = Orchestrator.reconcile_issue_states([issue], state)
 
     refute Map.has_key?(updated_state.running, issue_id)
     refute MapSet.member?(updated_state.claimed, issue_id)
@@ -811,7 +811,7 @@ defmodule Core.CoreTest do
     assert {:noreply, ^coalesced_state} = Orchestrator.handle_info({:tick, stale_tick_token}, coalesced_state)
   end
 
-  test "select_worker_host_for_test skips full ssh hosts under the shared per-host cap" do
+  test "select_worker_host skips full ssh hosts under the shared per-host cap" do
     write_workflow_file!(Workflow.workflow_file_path(),
       worker_ssh_hosts: ["worker-a", "worker-b"],
       worker_max_concurrent_agents_per_host: 1
@@ -823,10 +823,10 @@ defmodule Core.CoreTest do
       }
     }
 
-    assert Orchestrator.select_worker_host_for_test(state, nil) == "worker-b"
+    assert Orchestrator.select_worker_host(state, nil) == "worker-b"
   end
 
-  test "select_worker_host_for_test returns no_worker_capacity when every ssh host is full" do
+  test "select_worker_host returns no_worker_capacity when every ssh host is full" do
     write_workflow_file!(Workflow.workflow_file_path(),
       worker_ssh_hosts: ["worker-a", "worker-b"],
       worker_max_concurrent_agents_per_host: 1
@@ -839,10 +839,10 @@ defmodule Core.CoreTest do
       }
     }
 
-    assert Orchestrator.select_worker_host_for_test(state, nil) == :no_worker_capacity
+    assert Orchestrator.select_worker_host(state, nil) == :no_worker_capacity
   end
 
-  test "select_worker_host_for_test keeps the preferred ssh host when it still has capacity" do
+  test "select_worker_host keeps the preferred ssh host when it still has capacity" do
     write_workflow_file!(Workflow.workflow_file_path(),
       worker_ssh_hosts: ["worker-a", "worker-b"],
       worker_max_concurrent_agents_per_host: 2
@@ -855,7 +855,7 @@ defmodule Core.CoreTest do
       }
     }
 
-    assert Orchestrator.select_worker_host_for_test(state, "worker-a") == "worker-a"
+    assert Orchestrator.select_worker_host(state, "worker-a") == "worker-a"
   end
 
   defp assert_due_in_range(due_at_ms, min_remaining_ms, max_remaining_ms) do
