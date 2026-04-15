@@ -23,7 +23,14 @@ defmodule Core.TestSupport do
       alias Web.HttpServer
 
       import Core.TestSupport,
-        only: [write_workflow_file!: 1, write_workflow_file!: 2, restore_env: 2, stop_default_http_server: 0]
+        only: [
+          write_workflow_file!: 1,
+          write_workflow_file!: 2,
+          restore_env: 2,
+          stop_default_http_server: 0,
+          dashboard_context: 0,
+          dashboard_context: 1
+        ]
 
       setup do
         workflow_root =
@@ -49,6 +56,22 @@ defmodule Core.TestSupport do
         :ok
       end
     end
+  end
+
+  @doc """
+  Default context map for `CLI.StatusDashboard.format_snapshot_content/4` in
+  tests. Override fields with a map passed as `overrides`.
+  """
+  def dashboard_context(overrides \\ %{}) do
+    Map.merge(
+      %{
+        max_agents: 10,
+        dashboard_host: "127.0.0.1",
+        dashboard_port: nil,
+        project_slug: "project"
+      },
+      overrides
+    )
   end
 
   def write_workflow_file!(path, overrides \\ []) do

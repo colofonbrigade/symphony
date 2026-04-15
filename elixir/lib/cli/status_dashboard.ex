@@ -208,49 +208,110 @@ defmodule CLI.StatusDashboard do
     Enum.filter(samples, fn {timestamp, _} -> timestamp >= min_timestamp end)
   end
 
-  @doc false
-  @spec format_timestamp_for_test(DateTime.t()) :: String.t()
-  def format_timestamp_for_test(%DateTime{} = datetime), do: format_timestamp(datetime)
-
-  @doc false
-  @spec format_snapshot_content_for_test(term(), number(), context() | nil) :: String.t()
-  def format_snapshot_content_for_test(snapshot_data, tps, context \\ nil) do
-    format_snapshot_content(snapshot_data, tps, context || default_test_context())
+  @doc """
+  Format a running-agent entry as a single dashboard row. Used from
+  `format_snapshot_content/4` and directly from tests that exercise a
+  single-row layout.
+  """
+  @spec format_running_summary(map(), integer() | nil) :: String.t()
+  def format_running_summary(running_entry, terminal_columns \\ nil) do
+    format_running_row(running_entry, running_event_width(terminal_columns))
   end
 
-  @doc false
-  @spec format_snapshot_content_for_test(term(), number(), context() | nil, integer()) :: String.t()
-  def format_snapshot_content_for_test(snapshot_data, tps, context, terminal_columns),
-    do: format_snapshot_content(snapshot_data, tps, context || default_test_context(), terminal_columns)
+  @doc """
+  Build the full dashboard URL for a host/port pair, applying loopback and
+  IPv6-bracketing normalization. Returns nil when `port` is nil or 0.
+  """
+  @spec dashboard_url(String.t(), non_neg_integer() | nil) :: String.t() | nil
+  def dashboard_url(_host, nil), do: nil
 
-  @doc false
-  @spec format_running_summary_for_test(map(), integer() | nil) :: String.t()
-  def format_running_summary_for_test(running_entry, terminal_columns \\ nil),
-    do: format_running_summary(running_entry, running_event_width(terminal_columns))
+  def dashboard_url(host, port) when is_integer(port) and port > 0 do
+    "http://#{dashboard_url_host(host)}:#{port}/"
+  end
 
-  @doc false
-  @spec format_tps_for_test(number()) :: String.t()
-  def format_tps_for_test(value), do: format_tps(value)
+  def dashboard_url(_host, _port), do: nil
 
-  @doc false
-  @spec tps_graph_for_test([{integer(), integer()}], integer(), integer()) :: String.t()
-  def tps_graph_for_test(samples, now_ms, current_tokens),
-    do: tps_graph(samples, now_ms, current_tokens)
+  @doc """
+  Render a sparkline string of tokens-per-second over the throughput graph
+  window (10 minutes at 24 columns).
+  """
+  @spec tps_graph([{integer(), integer()}], integer(), integer()) :: String.t()
+  def tps_graph(samples, now_ms, current_tokens) do
+    bucket_ms = div(@throughput_graph_window_ms, @throughput_graph_columns)
+    active_bucket_start = div(now_ms, bucket_ms) * bucket_ms
+    graph_window_start = active_bucket_start - (@throughput_graph_columns - 1) * bucket_ms
 
-  @doc false
-  @spec dashboard_url_for_test(String.t(), non_neg_integer() | nil) :: String.t() | nil
-  def dashboard_url_for_test(host, port), do: dashboard_url(host, port)
+    rates =
+      [{now_ms, current_tokens} | samples]
+      |> prune_graph_samples(now_ms)
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [{start_ms, start_tokens}, {end_ms, end_tokens}] ->
+        elapsed_ms = end_ms - start_ms
+        delta_tokens = max(0, end_tokens - start_tokens)
+        tps = if elapsed_ms <= 0, do: 0.0, else: delta_tokens / (elapsed_ms / 1000.0)
+        {end_ms, tps}
+      end)
+
+    bucketed_tps =
+      0..(@throughput_graph_columns - 1)
+      |> Enum.map(fn bucket_idx ->
+        bucket_start = graph_window_start + bucket_idx * bucket_ms
+        bucket_end = bucket_start + bucket_ms
+        last_bucket? = bucket_idx == @throughput_graph_columns - 1
+
+        values =
+          rates
+          |> Enum.filter(fn {timestamp, _tps} ->
+            in_bucket?(timestamp, bucket_start, bucket_end, last_bucket?)
+          end)
+          |> Enum.map(fn {_timestamp, tps} -> tps end)
+
+        if values == [] do
+          0.0
+        else
+          Enum.sum(values) / length(values)
+        end
+      end)
+
+    max_tps = Enum.max(bucketed_tps, fn -> 0.0 end)
+
+    bucketed_tps
+    |> Enum.map_join(fn value ->
+      index =
+        if max_tps <= 0 do
+          0
+        else
+          round(value / max_tps * (length(@sparkline_blocks) - 1))
+        end
+
+      Enum.at(@sparkline_blocks, index, "▁")
+    end)
+  end
+
+  @doc """
+  Format an integer or numeric TPS value with thousands separators.
+  """
+  @spec format_tps(number()) :: String.t()
+  def format_tps(value) when is_number(value) do
+    value
+    |> trunc()
+    |> Integer.to_string()
+    |> group_thousands()
+  end
+
+  @doc """
+  Format a DateTime as a second-precision UTC string (the dashboard header
+  timestamp).
+  """
+  @spec format_timestamp(DateTime.t()) :: String.t()
+  def format_timestamp(%DateTime{} = datetime) do
+    datetime
+    |> DateTime.truncate(:second)
+    |> DateTime.to_string()
+  end
 
   ## --- internal helpers --------------------------------------------------
-
-  defp default_test_context do
-    %{
-      max_agents: 10,
-      dashboard_host: "127.0.0.1",
-      dashboard_port: nil,
-      project_slug: "project"
-    }
-  end
 
   defp format_project_link_lines(context) do
     project_part =
@@ -289,14 +350,6 @@ defmodule CLI.StatusDashboard do
 
   defp linear_project_url(project_slug), do: "https://linear.app/project/#{project_slug}/issues"
 
-  defp dashboard_url(_host, nil), do: nil
-
-  defp dashboard_url(host, port) when is_integer(port) and port > 0 do
-    "http://#{dashboard_url_host(host)}:#{port}/"
-  end
-
-  defp dashboard_url(_host, _port), do: nil
-
   defp dashboard_url_host(host) when host in ["0.0.0.0", "::", "[::]", ""], do: "127.0.0.1"
 
   defp dashboard_url_host(host) when is_binary(host) do
@@ -326,12 +379,12 @@ defmodule CLI.StatusDashboard do
     else
       running
       |> Enum.sort_by(& &1.identifier)
-      |> Enum.map(&format_running_summary(&1, running_event_width))
+      |> Enum.map(&format_running_row(&1, running_event_width))
     end
   end
 
   # credo:disable-for-next-line
-  defp format_running_summary(running_entry, running_event_width) do
+  defp format_running_row(running_entry, running_event_width) do
     issue = format_cell(running_entry.identifier || "unknown", @running_id_width)
     state = running_entry.state || "unknown"
     state_display = format_cell(to_string(state), @running_stage_width)
@@ -672,66 +725,6 @@ defmodule CLI.StatusDashboard do
   defp prepend("", value), do: value
   defp prepend(prefix, value), do: prefix <> value
 
-  defp format_tps(value) when is_number(value) do
-    value
-    |> trunc()
-    |> Integer.to_string()
-    |> group_thousands()
-  end
-
-  defp tps_graph(samples, now_ms, current_tokens) do
-    bucket_ms = div(@throughput_graph_window_ms, @throughput_graph_columns)
-    active_bucket_start = div(now_ms, bucket_ms) * bucket_ms
-    graph_window_start = active_bucket_start - (@throughput_graph_columns - 1) * bucket_ms
-
-    rates =
-      [{now_ms, current_tokens} | samples]
-      |> prune_graph_samples(now_ms)
-      |> Enum.sort_by(&elem(&1, 0))
-      |> Enum.chunk_every(2, 1, :discard)
-      |> Enum.map(fn [{start_ms, start_tokens}, {end_ms, end_tokens}] ->
-        elapsed_ms = end_ms - start_ms
-        delta_tokens = max(0, end_tokens - start_tokens)
-        tps = if elapsed_ms <= 0, do: 0.0, else: delta_tokens / (elapsed_ms / 1000.0)
-        {end_ms, tps}
-      end)
-
-    bucketed_tps =
-      0..(@throughput_graph_columns - 1)
-      |> Enum.map(fn bucket_idx ->
-        bucket_start = graph_window_start + bucket_idx * bucket_ms
-        bucket_end = bucket_start + bucket_ms
-        last_bucket? = bucket_idx == @throughput_graph_columns - 1
-
-        values =
-          rates
-          |> Enum.filter(fn {timestamp, _tps} ->
-            in_bucket?(timestamp, bucket_start, bucket_end, last_bucket?)
-          end)
-          |> Enum.map(fn {_timestamp, tps} -> tps end)
-
-        if values == [] do
-          0.0
-        else
-          Enum.sum(values) / length(values)
-        end
-      end)
-
-    max_tps = Enum.max(bucketed_tps, fn -> 0.0 end)
-
-    bucketed_tps
-    |> Enum.map_join(fn value ->
-      index =
-        if max_tps <= 0 do
-          0
-        else
-          round(value / max_tps * (length(@sparkline_blocks) - 1))
-        end
-
-      Enum.at(@sparkline_blocks, index, "▁")
-    end)
-  end
-
   defp in_bucket?(timestamp, bucket_start, bucket_end, true),
     do: timestamp >= bucket_start and timestamp <= bucket_end
 
@@ -740,12 +733,6 @@ defmodule CLI.StatusDashboard do
 
   defp status_dot(color_code) do
     colorize("●", color_code)
-  end
-
-  defp format_timestamp(datetime) do
-    datetime
-    |> DateTime.truncate(:second)
-    |> DateTime.to_string()
   end
 
   defp normalize_status_lines(content) do

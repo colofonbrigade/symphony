@@ -164,17 +164,7 @@ defmodule Core.StatusDashboardSnapshotTest do
   end
 
   defp render_snapshot(snapshot_data, tps, context_overrides \\ %{}) do
-    context = Map.merge(default_context(), context_overrides)
-    Renderer.format_snapshot_content_for_test(snapshot_data, tps, context, @terminal_columns)
-  end
-
-  defp default_context do
-    %{
-      max_agents: 10,
-      dashboard_host: "127.0.0.1",
-      dashboard_port: nil,
-      project_slug: "project"
-    }
+    Renderer.format_snapshot_content(snapshot_data, tps, dashboard_context(context_overrides), @terminal_columns)
   end
 
   defp running_entry(overrides) do
