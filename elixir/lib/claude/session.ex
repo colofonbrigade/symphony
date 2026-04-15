@@ -1,4 +1,4 @@
-defmodule Core.Claude.Session do
+defmodule Claude.Session do
   @moduledoc """
   Long-running client for the Claude Code stream-json subprocess.
 
@@ -22,28 +22,54 @@ defmodule Core.Claude.Session do
   """
 
   require Logger
-  alias Core.{Config, PathSafety, SSH}
+  alias Permissions.PathSafety
+  alias Transport.SSH
 
   @port_line_bytes 1_048_576
   @max_stream_log_bytes 1_000
+
+  @type claude_settings :: %{
+          optional(:command) => String.t() | nil,
+          optional(:permission_mode) => String.t(),
+          optional(:model) => String.t(),
+          optional(:effort) => String.t() | nil,
+          optional(:mcp_config_path) => String.t() | nil,
+          required(:turn_timeout_ms) => non_neg_integer()
+        }
 
   @type session :: %{
           port: port(),
           session_id: String.t() | nil,
           workspace: Path.t(),
           worker_host: String.t() | nil,
+          claude: claude_settings(),
           metadata: map(),
           turn_count: non_neg_integer()
         }
 
   @type on_message :: (map() -> any())
 
+  @doc """
+  Start a Claude Code session in the given workspace.
+
+  `opts` must include:
+    * `:claude` — a `claude_settings()` map (command, permission_mode, model,
+      effort, mcp_config_path, turn_timeout_ms).
+
+  `opts` may include:
+    * `:worker_host` — SSH host for remote sessions. Default: nil (local).
+    * `:workspace_root` — required for local sessions. Used to validate the
+      workspace path stays under the configured root. Ignored when
+      `:worker_host` is set (remote paths are validated separately).
+  """
   @spec start_session(Path.t(), keyword()) :: {:ok, session()} | {:error, term()}
   def start_session(workspace, opts \\ []) do
     worker_host = Keyword.get(opts, :worker_host)
+    claude = Keyword.fetch!(opts, :claude)
+    workspace_root = Keyword.get(opts, :workspace_root)
 
-    with {:ok, expanded_workspace} <- validate_workspace_cwd(workspace, worker_host),
-         {:ok, port} <- start_port(expanded_workspace, worker_host) do
+    with {:ok, expanded_workspace} <- validate_workspace_cwd(workspace, worker_host, workspace_root),
+         {:ok, port} <- start_port(expanded_workspace, worker_host, claude) do
       base_metadata = port_metadata(port, worker_host)
 
       # NOTE: Claude Code's `--print --input-format stream-json` mode does not
@@ -58,6 +84,7 @@ defmodule Core.Claude.Session do
          session_id: nil,
          workspace: expanded_workspace,
          worker_host: worker_host,
+         claude: claude,
          metadata: base_metadata,
          turn_count: 0
        }}
@@ -69,6 +96,7 @@ defmodule Core.Claude.Session do
         %{
           port: port,
           session_id: existing_session_id,
+          claude: %{turn_timeout_ms: turn_timeout_ms},
           metadata: metadata,
           turn_count: turn_count
         } = session,
@@ -87,7 +115,7 @@ defmodule Core.Claude.Session do
         }
 
         port
-        |> await_turn_completion(on_message, metadata, initial_state, turn_id, issue)
+        |> await_turn_completion(on_message, metadata, initial_state, turn_id, issue, turn_timeout_ms)
         |> finalize_run_turn(session, on_message, turn_id, issue)
 
       {:error, reason} ->
@@ -178,9 +206,7 @@ defmodule Core.Claude.Session do
     end
   end
 
-  defp await_turn_completion(port, on_message, metadata, initial_state, turn_id, _issue) do
-    timeout_ms = Config.settings!().claude.turn_timeout_ms
-
+  defp await_turn_completion(port, on_message, metadata, initial_state, turn_id, _issue, timeout_ms) do
     receive_event_loop(
       port,
       timeout_ms,
@@ -351,8 +377,9 @@ defmodule Core.Claude.Session do
 
   ## --- workspace + spawn -------------------------------------------------
 
-  defp validate_workspace_cwd(workspace, nil) when is_binary(workspace) do
-    case PathSafety.validate_workspace_in_root(workspace, Config.settings!().workspace.root) do
+  defp validate_workspace_cwd(workspace, nil, workspace_root)
+       when is_binary(workspace) and is_binary(workspace_root) do
+    case PathSafety.validate_workspace_in_root(workspace, workspace_root) do
       {:ok, canonical_workspace} ->
         {:ok, canonical_workspace}
 
@@ -370,7 +397,7 @@ defmodule Core.Claude.Session do
     end
   end
 
-  defp validate_workspace_cwd(workspace, worker_host)
+  defp validate_workspace_cwd(workspace, worker_host, _workspace_root)
        when is_binary(workspace) and is_binary(worker_host) do
     case PathSafety.validate_remote_workspace(workspace) do
       :ok ->
@@ -384,7 +411,7 @@ defmodule Core.Claude.Session do
     end
   end
 
-  defp start_port(workspace, nil) do
+  defp start_port(workspace, nil, claude) do
     executable = System.find_executable("bash")
 
     if is_nil(executable) do
@@ -397,7 +424,7 @@ defmodule Core.Claude.Session do
             :binary,
             :exit_status,
             :stderr_to_stdout,
-            args: [~c"-lc", String.to_charlist(launch_command_string())],
+            args: [~c"-lc", String.to_charlist(launch_command_string(claude))],
             cd: String.to_charlist(workspace),
             line: @port_line_bytes
           ]
@@ -407,20 +434,18 @@ defmodule Core.Claude.Session do
     end
   end
 
-  defp start_port(workspace, worker_host) when is_binary(worker_host) do
+  defp start_port(workspace, worker_host, claude) when is_binary(worker_host) do
     remote_command =
       [
         "cd #{shell_escape(workspace)}",
-        "exec #{launch_command_string()}"
+        "exec #{launch_command_string(claude)}"
       ]
       |> Enum.join(" && ")
 
     SSH.start_port(worker_host, remote_command, line: @port_line_bytes)
   end
 
-  defp launch_command_string do
-    settings = Config.settings!().claude
-
+  defp launch_command_string(settings) do
     base = settings.command || "claude"
 
     fixed_args = [

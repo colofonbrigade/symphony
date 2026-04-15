@@ -1,5 +1,13 @@
-defmodule Core.SSH do
-  @moduledoc false
+defmodule Transport.SSH do
+  @moduledoc """
+  SSH command and port launcher. Other boundaries (`Core`, `Claude`) call this
+  to run shell commands or open long-lived streams against a remote worker.
+
+  Configuration: reads optional `ssh_config` path from Application env under
+  `:core` (set by `config/runtime.exs` from `SYMPHONY_SSH_CONFIG`).
+  `Transport` is a peer boundary of `Core`, so it reads Application env
+  directly rather than going through `Core.Runtime`.
+  """
 
   @spec run(String.t(), String.t(), keyword()) :: {:ok, {String.t(), non_neg_integer()}} | {:error, term()}
   def run(host, command, opts \\ []) when is_binary(host) and is_binary(command) do
@@ -52,7 +60,7 @@ defmodule Core.SSH do
   defp maybe_put_line_option(port_opts, line_bytes), do: Keyword.put(port_opts, :line, line_bytes)
 
   defp maybe_put_config(args) do
-    case Core.Runtime.get(:ssh_config) do
+    case ProcessTree.get(:ssh_config, default: Application.get_env(:core, :ssh_config)) do
       config_path when is_binary(config_path) and config_path != "" ->
         args ++ ["-F", config_path]
 

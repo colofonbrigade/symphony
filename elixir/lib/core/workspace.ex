@@ -4,7 +4,9 @@ defmodule Core.Workspace do
   """
 
   require Logger
-  alias Core.{Config, PathSafety, SSH}
+  alias Core.Config
+  alias Permissions.PathSafety
+  alias Transport.SSH
 
   @remote_workspace_marker "__SYMPHONY_WORKSPACE__"
 

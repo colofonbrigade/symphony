@@ -20,7 +20,7 @@ defmodule Core.MixProject do
           Core.Orchestrator,
           Core.Orchestrator.State,
           Core.AgentRunner,
-          Core.Claude.Session,
+          Claude.Session,
           Core.CLI,
           Core.HttpServer,
           Core.StatusDashboard,

@@ -24,6 +24,7 @@ This directory contains the Elixir agent orchestration service that polls Linear
 - Orchestrator behavior is stateful and concurrency-sensitive; preserve retry, reconciliation, and cleanup semantics.
 - Follow `docs/logging.md` for logging conventions and required issue/session context fields.
 - Follow `docs/elixir_rules.md` for module boundary rules (each top-level `lib/<namespace>` is a boundary; cross-boundary deps must form a DAG; `Web` may depend on `Core` but not vice versa). See `docs/local_elixir_rules.md` for Symphony-specific boundary assignments (e.g., `Linear` as its own boundary).
+- Follow `docs/elixir_testing.md` for testing conventions: pin defaults in `config/test.exs`, use `Test.*` test doubles under `test/support/`, prefer direct unit tests over supervision-tree setups, and mark integration tests explicitly.
 
 ## Tests and Validation
 

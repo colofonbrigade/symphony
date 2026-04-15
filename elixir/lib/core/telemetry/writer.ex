@@ -12,7 +12,7 @@ defmodule Core.Telemetry.Writer do
 
   require Logger
 
-  alias Core.Claude.Usage
+  alias Claude.Usage
   alias Core.Telemetry.AgentEvent
   alias Core.Telemetry.Repo
 

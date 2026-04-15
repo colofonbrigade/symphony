@@ -4,7 +4,7 @@ defmodule Core.AgentRunner do
   """
 
   require Logger
-  alias Core.Claude.Session
+  alias Claude.Session
   alias Core.{Config, PromptBuilder, Tracker, Workspace}
   alias Schema.Tracker.Issue
 
@@ -81,13 +81,32 @@ defmodule Core.AgentRunner do
     max_turns = Keyword.get(opts, :max_turns, Config.settings!().agent.max_turns)
     issue_state_fetcher = Keyword.get(opts, :issue_state_fetcher, &Tracker.fetch_issue_states_by_ids/1)
 
-    with {:ok, session} <- Session.start_session(workspace, worker_host: worker_host) do
+    settings = Config.settings!()
+
+    session_opts = [
+      worker_host: worker_host,
+      claude: claude_settings(settings),
+      workspace_root: settings.workspace.root
+    ]
+
+    with {:ok, session} <- Session.start_session(workspace, session_opts) do
       try do
         do_run_claude_turns(session, workspace, issue, agent_update_recipient, opts, issue_state_fetcher, 1, max_turns)
       after
         Session.stop_session(session)
       end
     end
+  end
+
+  defp claude_settings(%{claude: claude}) do
+    %{
+      command: claude.command,
+      permission_mode: claude.permission_mode,
+      model: claude.model,
+      effort: claude.effort,
+      mcp_config_path: Map.get(claude, :mcp_config_path),
+      turn_timeout_ms: claude.turn_timeout_ms
+    }
   end
 
   defp do_run_claude_turns(claude_session, workspace, issue, agent_update_recipient, opts, issue_state_fetcher, turn_number, max_turns) do

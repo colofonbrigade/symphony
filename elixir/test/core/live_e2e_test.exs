@@ -2,7 +2,7 @@ defmodule Core.LiveE2ETest do
   use Core.TestSupport
 
   require Logger
-  alias Core.SSH
+  alias Transport.SSH
 
   @moduletag :live_e2e
   @moduletag timeout: 300_000

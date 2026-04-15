@@ -495,7 +495,7 @@ defmodule Core.CoreTest do
       Process.sleep(50)
 
       assert {:ok, workspace} =
-               Core.PathSafety.canonicalize(Path.join(test_root, issue_identifier))
+               Permissions.PathSafety.canonicalize(Path.join(test_root, issue_identifier))
 
       File.mkdir_p!(workspace)
 

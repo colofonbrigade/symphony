@@ -6,8 +6,8 @@ defmodule Core.TestSupport do
       use ExUnit.Case
       import ExUnit.CaptureLog
 
+      alias Claude.Session
       alias Core.AgentRunner
-      alias Core.Claude.Session
       alias Core.CLI
       alias Core.Config
       alias Core.Orchestrator

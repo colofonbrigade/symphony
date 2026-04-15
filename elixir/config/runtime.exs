@@ -10,7 +10,7 @@ import Config
 config :core, Web.Endpoint,
   secret_key_base: Base.encode64(:crypto.strong_rand_bytes(48), padding: false)
 
-# Optional SSH config file path. `Core.SSH` reads it through Application env.
+# Optional SSH config file path. `Transport.SSH` reads it from Application env.
 config :core, :ssh_config, System.get_env("SYMPHONY_SSH_CONFIG")
 
 # Workflow-driven endpoint config. The entry point (`mix symphony.run`,

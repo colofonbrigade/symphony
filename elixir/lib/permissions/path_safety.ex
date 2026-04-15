@@ -1,5 +1,11 @@
-defmodule Core.PathSafety do
-  @moduledoc false
+defmodule Permissions.PathSafety do
+  @moduledoc """
+  Path validation guards against traversal and symlink-escape attacks.
+
+  Pure functions over filesystem paths. No state, no Application env reads,
+  no cross-boundary calls. Lives in the `Permissions` boundary alongside
+  other security-sensitive helpers.
+  """
 
   @type workspace_error ::
           {:workspace_equals_root, canonical :: Path.t(), canonical_root :: Path.t()}

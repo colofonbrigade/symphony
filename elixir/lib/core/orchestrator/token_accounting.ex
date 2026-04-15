@@ -8,7 +8,7 @@ defmodule Core.Orchestrator.TokenAccounting do
   or state map and returns an updated one.
   """
 
-  alias Core.Claude.Usage
+  alias Claude.Usage
 
   @empty_totals %{
     input_tokens: 0,

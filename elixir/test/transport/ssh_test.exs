@@ -1,7 +1,7 @@
-defmodule Core.SSHTest do
+defmodule Transport.SSHTest do
   use ExUnit.Case, async: false
 
-  alias Core.SSH
+  alias Transport.SSH
 
   test "run/3 keeps bracketed IPv6 host:port targets intact" do
     test_root = Path.join(System.tmp_dir!(), "symphony-ssh-ipv6-test-#{System.unique_integer([:positive])}")

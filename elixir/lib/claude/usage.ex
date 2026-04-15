@@ -1,4 +1,4 @@
-defmodule Core.Claude.Usage do
+defmodule Claude.Usage do
   @moduledoc """
   Pure helpers for extracting usage and cost from Claude Code stream-json
   event payloads. `Claude.Session` already lifts the canonical `usage` map

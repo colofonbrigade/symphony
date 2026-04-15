@@ -105,7 +105,7 @@ defmodule Core.WorkspaceAndConfigTest do
 
       write_workflow_file!(Workflow.workflow_file_path(), workspace_root: workspace_root)
 
-      assert {:ok, canonical_workspace} = Core.PathSafety.canonicalize(stale_workspace)
+      assert {:ok, canonical_workspace} = Permissions.PathSafety.canonicalize(stale_workspace)
       assert {:ok, workspace} = Workspace.create_for_issue("MT-STALE")
       assert workspace == canonical_workspace
       assert File.dir?(workspace)
@@ -132,8 +132,8 @@ defmodule Core.WorkspaceAndConfigTest do
 
       write_workflow_file!(Workflow.workflow_file_path(), workspace_root: workspace_root)
 
-      assert {:ok, canonical_outside_root} = Core.PathSafety.canonicalize(outside_root)
-      assert {:ok, canonical_workspace_root} = Core.PathSafety.canonicalize(workspace_root)
+      assert {:ok, canonical_outside_root} = Permissions.PathSafety.canonicalize(outside_root)
+      assert {:ok, canonical_workspace_root} = Permissions.PathSafety.canonicalize(workspace_root)
 
       assert {:error, {:workspace_outside_root, ^canonical_outside_root, ^canonical_workspace_root}} =
                Workspace.create_for_issue("MT-SYM")
@@ -159,7 +159,7 @@ defmodule Core.WorkspaceAndConfigTest do
       write_workflow_file!(Workflow.workflow_file_path(), workspace_root: linked_root)
 
       assert {:ok, canonical_workspace} =
-               Core.PathSafety.canonicalize(Path.join(actual_root, "MT-LINK"))
+               Permissions.PathSafety.canonicalize(Path.join(actual_root, "MT-LINK"))
 
       assert {:ok, workspace} = Workspace.create_for_issue("MT-LINK")
       assert workspace == canonical_workspace
@@ -181,7 +181,7 @@ defmodule Core.WorkspaceAndConfigTest do
       write_workflow_file!(Workflow.workflow_file_path(), workspace_root: workspace_root)
 
       assert {:ok, canonical_workspace_root} =
-               Core.PathSafety.canonicalize(workspace_root)
+               Permissions.PathSafety.canonicalize(workspace_root)
 
       assert {:error, {:workspace_equals_root, ^canonical_workspace_root, ^canonical_workspace_root}, ""} =
                Workspace.remove(workspace_root)
@@ -242,7 +242,7 @@ defmodule Core.WorkspaceAndConfigTest do
       write_workflow_file!(Workflow.workflow_file_path(), workspace_root: workspace_root)
 
       workspace = Path.join(workspace_root, "MT-608")
-      assert {:ok, canonical_workspace} = Core.PathSafety.canonicalize(workspace)
+      assert {:ok, canonical_workspace} = Permissions.PathSafety.canonicalize(workspace)
 
       assert {:ok, ^canonical_workspace} = Workspace.create_for_issue("MT-608")
       assert File.dir?(workspace)
@@ -970,7 +970,7 @@ defmodule Core.WorkspaceAndConfigTest do
     expanded_path = Path.expand(path)
 
     assert {:error, {:path_canonicalize_failed, ^expanded_path, :enametoolong}} =
-             Core.PathSafety.canonicalize(path)
+             Permissions.PathSafety.canonicalize(path)
   end
 
   test "workflow prompt is used when building base prompt" do

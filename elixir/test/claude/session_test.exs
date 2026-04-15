@@ -1,7 +1,27 @@
-defmodule Core.Claude.SessionTest do
+defmodule Claude.SessionTest do
   use Core.TestSupport
 
-  alias Core.Claude.Session
+  alias Claude.Session
+
+  # Read Session start_session opts from the current workflow config. The
+  # production caller (Core.AgentRunner) does the equivalent; tests that
+  # stood up a workflow file with `claude_command` / `workspace_root` get
+  # the same plumbing via this helper.
+  defp session_opts_from_config do
+    settings = Config.settings!()
+
+    [
+      claude: %{
+        command: settings.claude.command,
+        permission_mode: settings.claude.permission_mode,
+        model: settings.claude.model,
+        effort: settings.claude.effort,
+        mcp_config_path: Map.get(settings.claude, :mcp_config_path),
+        turn_timeout_ms: settings.claude.turn_timeout_ms
+      },
+      workspace_root: settings.workspace.root
+    ]
+  end
 
   @issue %{
     id: "issue-test",
@@ -28,7 +48,7 @@ defmodule Core.Claude.SessionTest do
         )
 
         assert {:error, {:invalid_workspace_cwd, :workspace_root, _}} =
-                 Session.start_session(workspace_root)
+                 Session.start_session(workspace_root, session_opts_from_config())
       after
         File.rm_rf(test_root)
       end
@@ -53,7 +73,7 @@ defmodule Core.Claude.SessionTest do
         )
 
         assert {:error, {:invalid_workspace_cwd, :outside_workspace_root, _, _}} =
-                 Session.start_session(outside_workspace)
+                 Session.start_session(outside_workspace, session_opts_from_config())
       after
         File.rm_rf(test_root)
       end
@@ -80,7 +100,7 @@ defmodule Core.Claude.SessionTest do
         )
 
         assert {:error, {:invalid_workspace_cwd, :symlink_escape, ^symlink_workspace, _}} =
-                 Session.start_session(symlink_workspace)
+                 Session.start_session(symlink_workspace, session_opts_from_config())
       after
         File.rm_rf(test_root)
       end
@@ -90,12 +110,12 @@ defmodule Core.Claude.SessionTest do
   describe "single-turn happy path" do
     test "captures session_id from system init event during run_turn and emits :session_started + :turn_completed" do
       with_fake_session(fn workspace, _trace_file ->
-        assert {:ok, session} = Session.start_session(workspace)
+        assert {:ok, session} = Session.start_session(workspace, session_opts_from_config())
         # session_id is nil after start_session — Claude Code does not emit
         # any events until the first user message lands on stdin, so we
         # capture session_id lazily during the first run_turn.
         assert session.session_id == nil
-        assert {:ok, canonical_workspace} = Core.PathSafety.canonicalize(workspace)
+        assert {:ok, canonical_workspace} = Permissions.PathSafety.canonicalize(workspace)
         assert session.workspace == canonical_workspace
         assert session.turn_count == 0
         assert is_port(session.port)
@@ -130,7 +150,7 @@ defmodule Core.Claude.SessionTest do
 
     test "stop_session is safe to call after the port has exited" do
       with_fake_session(fn workspace, _trace_file ->
-        assert {:ok, session} = Session.start_session(workspace)
+        assert {:ok, session} = Session.start_session(workspace, session_opts_from_config())
         assert {:ok, _} = Session.run_turn(session, "Hello", @issue)
         assert :ok = Session.stop_session(session)
         # Calling again is a no-op
@@ -142,7 +162,7 @@ defmodule Core.Claude.SessionTest do
   describe "multi-turn over a single session" do
     test "two run_turn calls reuse the same port and session_id" do
       with_fake_session(fn workspace, trace_file ->
-        assert {:ok, session} = Session.start_session(workspace)
+        assert {:ok, session} = Session.start_session(workspace, session_opts_from_config())
         assert session.session_id == nil
 
         parent = self()
@@ -200,7 +220,7 @@ defmodule Core.Claude.SessionTest do
     test "result event with is_error: true returns {:error, {:turn_failed, _}}" do
       with_fake_session(
         fn workspace, _trace_file ->
-          assert {:ok, session} = Session.start_session(workspace)
+          assert {:ok, session} = Session.start_session(workspace, session_opts_from_config())
 
           parent = self()
 
@@ -226,7 +246,7 @@ defmodule Core.Claude.SessionTest do
     test "port exit before result event returns {:error, {:port_exit, _}}" do
       with_fake_session(
         fn workspace, _trace_file ->
-          assert {:ok, session} = Session.start_session(workspace)
+          assert {:ok, session} = Session.start_session(workspace, session_opts_from_config())
 
           assert {:error, {:port_exit, _status}} =
                    Session.run_turn(session, "Crashing turn", @issue)
@@ -242,7 +262,7 @@ defmodule Core.Claude.SessionTest do
     test "constructs claude argv with permission_mode, model, effort, and mcp_config_path" do
       with_fake_session(
         fn workspace, trace_file ->
-          assert {:ok, session} = Session.start_session(workspace)
+          assert {:ok, session} = Session.start_session(workspace, session_opts_from_config())
           assert {:ok, _} = Session.run_turn(session, "Hello", @issue)
           Session.stop_session(session)
 
