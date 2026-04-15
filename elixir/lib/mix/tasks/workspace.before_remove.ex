@@ -1,4 +1,5 @@
 defmodule Mix.Tasks.Workspace.BeforeRemove do
+  use Boundary, classify_to: Core
   use Mix.Task
 
   @shortdoc "Close open GitHub PRs for the current branch before workspace removal"

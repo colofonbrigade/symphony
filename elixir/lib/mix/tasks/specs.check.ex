@@ -1,4 +1,5 @@
 defmodule Mix.Tasks.Specs.Check do
+  use Boundary, classify_to: Core
   use Mix.Task
 
   alias Core.SpecsCheck

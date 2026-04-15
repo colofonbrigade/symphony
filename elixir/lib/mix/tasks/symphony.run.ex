@@ -1,4 +1,5 @@
 defmodule Mix.Tasks.Symphony.Run do
+  use Boundary, classify_to: Core
   use Mix.Task
 
   alias Core.LogFile

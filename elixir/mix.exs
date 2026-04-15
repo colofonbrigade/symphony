@@ -6,7 +6,7 @@ defmodule Core.MixProject do
       app: :core,
       version: "0.1.0",
       elixir: "~> 1.19",
-      compilers: [:phoenix_live_view] ++ Mix.compilers(),
+      compilers: [:phoenix_live_view, :boundary] ++ Mix.compilers(),
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       test_coverage: [
@@ -64,6 +64,7 @@ defmodule Core.MixProject do
   defp deps do
     [
       {:bandit, "~> 1.8"},
+      {:boundary, "~> 0.10", runtime: false},
       {:floki, ">= 0.30.0", only: :test},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix, "~> 1.8.0"},
@@ -86,7 +87,7 @@ defmodule Core.MixProject do
     [
       setup: ["deps.get"],
       build: ["escript.build"],
-      lint: ["specs.check", "credo --strict"]
+      lint: ["specs.check", "credo --strict", "compile --warnings-as-errors"]
     ]
   end
 

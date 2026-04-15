@@ -5,6 +5,7 @@ defmodule Symphony.Application do
   only module allowed to reach across all of them.
   """
 
+  use Boundary, deps: [Core, Web]
   use Application
 
   alias Core.Telemetry
