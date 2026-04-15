@@ -8,7 +8,7 @@ justification in the PR.
 Each top-level namespace under `lib/` is a **boundary**. Typical boundaries are:
 
 - `Core` — The domain core.
-- `Web` — Phoenix endpoint, LiveView dashboard, JSON API for observability.
+- `Web` — Phoenix endpoint and/or JSON API (whatever the app's HTTP surface is).
 - `Schema` — Data structures (structs, Ecto schemas, types) shared across boundaries, plus
   functions that describe the structure of those data (e.g. type specs, field
   enumerations). See "The `Schema` boundary" below.
@@ -38,13 +38,13 @@ What does **not** belong in `Schema`:
 - Business rules or policy. A schema knows its own invariants (required fields, numeric ranges).
   It doesn't know why or when a record gets created.
 
-Rule of thumb: if a file's imports include `Ecto.Repo`, a tracker client, or any other boundary's
-modules, it doesn't belong in `Schema`.
+Rule of thumb: if a file's imports include `Ecto.Repo`, an external API client, or any other
+boundary's modules, it doesn't belong in `Schema`.
 
 ## Runtime configuration (`config/runtime.exs`)
 
 `config/runtime.exs` is the single source of truth for anything fixed at boot but not at compile
-time: environment-variable reads, paths that depend on the deploy target, workflow/config files,
+time: environment-variable reads, paths that depend on the deploy target, external config files,
 per-boot secrets. It runs after modules are compiled and loaded, before applications start.
 
 Use it for:
@@ -92,8 +92,8 @@ Rules of thumb:
 - If the value is fixed once a release is built (a feature flag, a cache flag that depends on env,
   a test-only mock module), it belongs in a `config/<env>.exs` file and can be read via
   `Application.compile_env/3` (or `compile_env!/2` when the absence of the key is a bug).
-- If the value is fixed at boot but depends on the deploy target (secrets, file paths, workflow
-  YAML), it belongs in `config/runtime.exs` and is read via `Application.get_env/2`.
+- If the value is fixed at boot but depends on the deploy target (secrets, file paths, external
+  config files), it belongs in `config/runtime.exs` and is read via `Application.get_env/2`.
 - If both could work, prefer `compile_env` — it inlines into the `.beam` at compile time (zero
   runtime cost) and Elixir emits a warning if `runtime.exs` later overwrites the key, which
   catches accidental "I thought this was runtime-settable" mistakes.

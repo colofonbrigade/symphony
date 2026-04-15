@@ -28,4 +28,9 @@ this file wins locally; consider whether the divergence should be upstreamed.
   context map into an ANSI string; `Core.StatusDashboard` composes Config reads, builds the
   context, and writes the result to stdout. Future home for alternate renderers (JSON, minimal)
   or non-dashboard CLI output. Depends on `Schema`; depended on by `Core`.
+- `Utils` — Cross-cutting infrastructure helpers. Today houses `Utils.Runtime`, a thin
+  `ProcessTree` accessor with Application-env fallback. Leaf of the DAG; any boundary may depend
+  on it. **Long-lived GenServers must not read config through `Utils.Runtime`** — the cache
+  lives in their own dict and pins stale values. Such callers use `Application.get_env` directly
+  (see `Core.Workflow.workflow_file_path/0`, `Core.Config.server_port/0`).
 

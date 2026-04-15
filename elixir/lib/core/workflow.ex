@@ -9,7 +9,10 @@ defmodule Core.Workflow do
 
   @spec workflow_file_path() :: Path.t()
   def workflow_file_path do
-    Core.Runtime.get(:workflow_file_path) ||
+    # Reads Application env directly rather than Utils.Runtime because
+    # Core.WorkflowStore is a long-lived GenServer; ProcessTree caching
+    # would pin the first-seen value in its dict across test runs.
+    Application.get_env(:core, :workflow_file_path) ||
       Path.join(File.cwd!(), @workflow_file_name)
   end
 

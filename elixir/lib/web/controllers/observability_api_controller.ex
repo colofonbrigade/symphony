@@ -54,10 +54,10 @@ defmodule Web.ObservabilityApiController do
   end
 
   defp orchestrator do
-    Core.Runtime.get(:endpoint_orchestrator, Endpoint.config(:orchestrator) || Core.Orchestrator)
+    Utils.Runtime.get(:endpoint_orchestrator, Endpoint.config(:orchestrator) || Core.Orchestrator)
   end
 
   defp snapshot_timeout_ms do
-    Core.Runtime.get(:endpoint_snapshot_timeout_ms, Endpoint.config(:snapshot_timeout_ms) || 15_000)
+    Utils.Runtime.get(:endpoint_snapshot_timeout_ms, Endpoint.config(:snapshot_timeout_ms) || 15_000)
   end
 end

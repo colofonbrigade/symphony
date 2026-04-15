@@ -6,7 +6,7 @@ defmodule Web do
   """
 
   use Boundary,
-    deps: [Core, Schema],
+    deps: [Core, Schema, Utils],
     exports: [
       DashboardLive,
       Endpoint,

@@ -6,7 +6,7 @@ defmodule Core do
   """
 
   use Boundary,
-    deps: [CLI, Schema, Permissions, Transport, Claude],
+    deps: [CLI, Schema, Permissions, Transport, Claude, Utils],
     exports: [
       AgentRunner,
       CLI,
@@ -15,7 +15,6 @@ defmodule Core do
       ObservabilityPubSub,
       Orchestrator,
       PromptBuilder,
-      Runtime,
       SpecsCheck,
       StatusDashboard,
       Telemetry.Bootstrap,

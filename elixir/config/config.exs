@@ -17,8 +17,6 @@ config :core, Web.Endpoint,
   orchestrator: Core.Orchestrator,
   snapshot_timeout_ms: 15_000
 
-config :core, Core.Runtime, cache_reads: true
-
 config :core, Core.Tracker, adapter: Linear.Adapter
 
 config :core, Core.StatusDashboard, render: true

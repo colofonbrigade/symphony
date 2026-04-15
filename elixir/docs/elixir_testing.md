@@ -11,12 +11,12 @@ there once rather than mutating Application env from every test.
 ### What belongs in `config/test.exs`
 
 - **Test doubles** (fakes, in-memory adapters) configured globally, not
-  swapped in per-test. Example:
+  swapped in per-test. Example shape:
   ```elixir
-  config :core, Core.Tracker, adapter: Test.Tracker.Memory
+  config :my_app, MyApp.SomeAdapter, impl: Test.SomeAdapter.Memory
   ```
-- **Test-env toggles** (disabled dashboards, in-memory repos, noisy features
-  turned off).
+- **Test-env toggles** (disabled background processes, in-memory repos,
+  noisy features turned off).
 
 ### Test-only modules
 
@@ -50,11 +50,20 @@ into the setup it needs. These should be rare and isolated.
 
 For values read from short-lived processes (controllers, test-process-scoped
 code, pure functions called from the test process), use `Process.put/2`
-through the project's runtime accessor (see `Core.Runtime` in this repo).
-Scoped to the test process, no cleanup, `async: true` safe. Caching must be
-disabled in test so long-lived processes don't pin stale values — that's
-what `config :core, Core.Runtime, cache_reads: false` in `config/test.exs`
-controls.
+combined with a `ProcessTree`-backed accessor (the
+[`process_tree`](https://hex.pm/packages/process_tree) library walks up
+`$ancestors` so `Process.put` in the test process reaches children spawned
+by the test). Scoped to the test process, no cleanup, `async: true` safe.
+
+Most projects wrap this in a thin accessor (e.g. `MyApp.Runtime.get/2`) that
+falls back to `Application.get_env` when the key isn't in the tree. That
+lets call sites read a single source without repeating the fallback.
+
+Long-lived GenServers must *not* read through this accessor —
+`ProcessTree` caches the value in each reader's own process dict, so the
+first-seen value pins forever. Those readers go directly through
+`Application.get_env`, which always reflects the current env. Document this
+split in the project's local rules file.
 
 ## Smell check
 

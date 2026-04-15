@@ -79,7 +79,10 @@ defmodule Core.Config do
 
   @spec server_port() :: non_neg_integer() | nil
   def server_port do
-    case Core.Runtime.get(:server_port_override) do
+    # Reads Application env directly: called from Core.StatusDashboard
+    # (long-lived GenServer) on each render tick, so ProcessTree caching
+    # would serve a stale value after the env changes.
+    case Application.get_env(:core, :server_port_override) do
       port when is_integer(port) and port >= 0 -> port
       _ -> settings!().server.port
     end

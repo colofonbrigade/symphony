@@ -5,5 +5,5 @@ defmodule Transport do
   config from Application env; no in-app deps.
   """
 
-  use Boundary, deps: [], exports: [SSH]
+  use Boundary, deps: [Utils], exports: [SSH]
 end
