@@ -18,18 +18,6 @@ defmodule Core.StatusDashboardSnapshotTest do
   end
 
   test "snapshot fixture: idle dashboard with observability url" do
-    previous_port_override = Application.get_env(:core, :server_port_override)
-
-    on_exit(fn ->
-      if is_nil(previous_port_override) do
-        Application.delete_env(:core, :server_port_override)
-      else
-        Application.put_env(:core, :server_port_override, previous_port_override)
-      end
-    end)
-
-    Application.put_env(:core, :server_port_override, 4000)
-
     snapshot_data =
       {:ok,
        %{
@@ -38,7 +26,9 @@ defmodule Core.StatusDashboardSnapshotTest do
          agent_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0}
        }}
 
-    Snapshot.assert_dashboard_snapshot!("idle_with_dashboard_url", render_snapshot(snapshot_data, 0.0))
+    rendered = render_snapshot(snapshot_data, 0.0, %{dashboard_port: 4000})
+
+    Snapshot.assert_dashboard_snapshot!("idle_with_dashboard_url", rendered)
   end
 
   test "snapshot fixture: super busy dashboard" do
@@ -173,8 +163,18 @@ defmodule Core.StatusDashboardSnapshotTest do
     Snapshot.assert_dashboard_snapshot!("credits_unlimited", render_snapshot(snapshot_data, 42.0))
   end
 
-  defp render_snapshot(snapshot_data, tps) do
-    StatusDashboard.format_snapshot_content_for_test(snapshot_data, tps, @terminal_columns)
+  defp render_snapshot(snapshot_data, tps, context_overrides \\ %{}) do
+    context = Map.merge(default_context(), context_overrides)
+    Renderer.format_snapshot_content_for_test(snapshot_data, tps, context, @terminal_columns)
+  end
+
+  defp default_context do
+    %{
+      max_agents: 10,
+      dashboard_host: "127.0.0.1",
+      dashboard_port: nil,
+      project_slug: "project"
+    }
   end
 
   defp running_entry(overrides) do

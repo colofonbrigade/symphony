@@ -1,4 +1,4 @@
-defmodule Core.StatusDashboard.AgentMessageHumanizer do
+defmodule CLI.StatusDashboard.AgentMessage do
   @moduledoc """
   Pure payload → prose transformations for the status dashboard. Maps
   Claude Code stream-json events (`type` of `system`, `assistant`, `user`,

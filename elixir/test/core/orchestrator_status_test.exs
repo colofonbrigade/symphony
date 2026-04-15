@@ -812,25 +812,13 @@ defmodule Core.OrchestratorStatusTest do
          agent_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0}
        }}
 
-    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0)
+    rendered = Renderer.format_snapshot_content_for_test(snapshot_data, 0.0)
 
     assert rendered =~ "https://linear.app/project/project/issues"
     refute rendered =~ "Dashboard:"
   end
 
   test "status dashboard renders dashboard url on its own line when server port is configured" do
-    previous_port_override = Application.get_env(:core, :server_port_override)
-
-    on_exit(fn ->
-      if is_nil(previous_port_override) do
-        Application.delete_env(:core, :server_port_override)
-      else
-        Application.put_env(:core, :server_port_override, previous_port_override)
-      end
-    end)
-
-    Application.put_env(:core, :server_port_override, 4000)
-
     snapshot_data =
       {:ok,
        %{
@@ -839,7 +827,14 @@ defmodule Core.OrchestratorStatusTest do
          agent_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0}
        }}
 
-    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0)
+    context = %{
+      max_agents: 10,
+      dashboard_host: "127.0.0.1",
+      dashboard_port: 4000,
+      project_slug: "project"
+    }
+
+    rendered = Renderer.format_snapshot_content_for_test(snapshot_data, 0.0, context)
 
     assert rendered =~ "│ Project:"
     assert rendered =~ "https://linear.app/project/project/issues"
@@ -848,10 +843,10 @@ defmodule Core.OrchestratorStatusTest do
   end
 
   test "status dashboard normalizes wildcard hosts into a reachable loopback URL" do
-    assert StatusDashboard.dashboard_url_for_test("0.0.0.0", 43_123) ==
+    assert Renderer.dashboard_url_for_test("0.0.0.0", 43_123) ==
              "http://127.0.0.1:43123/"
 
-    assert StatusDashboard.dashboard_url_for_test("::1", 4000) ==
+    assert Renderer.dashboard_url_for_test("::1", 4000) ==
              "http://[::1]:4000/"
   end
 
@@ -865,7 +860,7 @@ defmodule Core.OrchestratorStatusTest do
          polling: %{checking?: false, next_poll_in_ms: 2_000, poll_interval_ms: 30_000}
        }}
 
-    waiting_rendered = StatusDashboard.format_snapshot_content_for_test(waiting_snapshot, 0.0)
+    waiting_rendered = Renderer.format_snapshot_content_for_test(waiting_snapshot, 0.0)
     assert waiting_rendered =~ "Next refresh:"
     assert waiting_rendered =~ "2s"
 
@@ -878,7 +873,7 @@ defmodule Core.OrchestratorStatusTest do
          polling: %{checking?: true, next_poll_in_ms: nil, poll_interval_ms: 30_000}
        }}
 
-    checking_rendered = StatusDashboard.format_snapshot_content_for_test(checking_snapshot, 0.0)
+    checking_rendered = Renderer.format_snapshot_content_for_test(checking_snapshot, 0.0)
     assert checking_rendered =~ "checking now…"
   end
 
@@ -891,7 +886,7 @@ defmodule Core.OrchestratorStatusTest do
          agent_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0}
        }}
 
-    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0)
+    rendered = Renderer.format_snapshot_content_for_test(snapshot_data, 0.0)
     plain = Regex.replace(~r/\e\[[0-9;]*m/, rendered, "")
 
     assert plain =~ ~r/No active agents\r?\n│\s*\r?\n├─ Backoff queue/
@@ -929,7 +924,7 @@ defmodule Core.OrchestratorStatusTest do
          }
        }}
 
-    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0)
+    rendered = Renderer.format_snapshot_content_for_test(snapshot_data, 0.0)
     plain = Regex.replace(~r/\e\[[0-9;]*m/, rendered, "")
 
     assert plain =~ ~r/MT-777.*\r?\n│\s*\r?\n├─ Backoff queue/s
@@ -944,7 +939,7 @@ defmodule Core.OrchestratorStatusTest do
          agent_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0}
        }}
 
-    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0)
+    rendered = Renderer.format_snapshot_content_for_test(snapshot_data, 0.0)
 
     assert rendered |> String.split("\n") |> List.last() == "╰─"
   end
@@ -1000,15 +995,15 @@ defmodule Core.OrchestratorStatusTest do
   end
 
   test "status dashboard computes rolling 5-second token throughput" do
-    assert StatusDashboard.rolling_tps([], 10_000, 0) == 0.0
+    assert Renderer.rolling_tps([], 10_000, 0) == 0.0
 
-    assert StatusDashboard.rolling_tps([{9_000, 20}], 10_000, 40) == 20.0
+    assert Renderer.rolling_tps([{9_000, 20}], 10_000, 40) == 20.0
 
     # sample older than 5s is dropped from the window
-    assert StatusDashboard.rolling_tps([{4_900, 10}], 10_000, 90) == 0.0
+    assert Renderer.rolling_tps([{4_900, 10}], 10_000, 90) == 0.0
 
     tps =
-      StatusDashboard.rolling_tps(
+      Renderer.rolling_tps(
         [{9_500, 10}, {9_000, 40}, {8_000, 80}],
         10_000,
         95
@@ -1019,16 +1014,16 @@ defmodule Core.OrchestratorStatusTest do
 
   test "status dashboard throttles tps updates to once per second" do
     {first_second, first_tps} =
-      StatusDashboard.throttled_tps(nil, nil, 10_000, [{9_000, 20}], 40)
+      Renderer.throttled_tps(nil, nil, 10_000, [{9_000, 20}], 40)
 
     {same_second, same_tps} =
-      StatusDashboard.throttled_tps(first_second, first_tps, 10_500, [{9_000, 20}], 200)
+      Renderer.throttled_tps(first_second, first_tps, 10_500, [{9_000, 20}], 200)
 
     assert same_second == first_second
     assert same_tps == first_tps
 
     {next_second, next_tps} =
-      StatusDashboard.throttled_tps(same_second, same_tps, 11_000, [{10_500, 200}], 260)
+      Renderer.throttled_tps(same_second, same_tps, 11_000, [{10_500, 200}], 260)
 
     assert next_second == 11
     refute next_tps == same_tps
@@ -1036,7 +1031,7 @@ defmodule Core.OrchestratorStatusTest do
 
   test "status dashboard formats timestamps at second precision" do
     dt = ~U[2026-02-15 21:36:38.987654Z]
-    assert StatusDashboard.format_timestamp_for_test(dt) == "2026-02-15 21:36:38Z"
+    assert Renderer.format_timestamp_for_test(dt) == "2026-02-15 21:36:38Z"
   end
 
   test "status dashboard renders 10-minute TPS graph snapshot for steady throughput" do
@@ -1048,7 +1043,7 @@ defmodule Core.OrchestratorStatusTest do
         {timestamp, div(timestamp, 100)}
       end
 
-    assert StatusDashboard.tps_graph_for_test(samples, now_ms, current_tokens) ==
+    assert Renderer.tps_graph_for_test(samples, now_ms, current_tokens) ==
              "████████████████████████"
   end
 
@@ -1061,7 +1056,7 @@ defmodule Core.OrchestratorStatusTest do
 
     {current_tokens, samples} = graph_samples_from_rates(rates_per_bucket)
 
-    assert StatusDashboard.tps_graph_for_test(samples, now_ms, current_tokens) ==
+    assert Renderer.tps_graph_for_test(samples, now_ms, current_tokens) ==
              "▁▂▂▂▃▃▃▃▄▄▄▅▅▅▆▆▆▆▇▇▇██▅"
   end
 
@@ -1071,10 +1066,10 @@ defmodule Core.OrchestratorStatusTest do
     next_current_tokens = current_tokens + 120
     samples = graph_samples_for_stability_test(now_ms)
 
-    graph_at_now = StatusDashboard.tps_graph_for_test(samples, now_ms, current_tokens)
+    graph_at_now = Renderer.tps_graph_for_test(samples, now_ms, current_tokens)
 
     graph_next_second =
-      StatusDashboard.tps_graph_for_test(samples, now_ms + 1_000, next_current_tokens)
+      Renderer.tps_graph_for_test(samples, now_ms + 1_000, next_current_tokens)
 
     historical_changes =
       graph_at_now
@@ -1099,7 +1094,7 @@ defmodule Core.OrchestratorStatusTest do
 
   test "status dashboard renders last agent message in EVENT column" do
     row =
-      StatusDashboard.format_running_summary_for_test(
+      Renderer.format_running_summary_for_test(
         %{
           identifier: "MT-233",
           state: "running",
@@ -1131,7 +1126,7 @@ defmodule Core.OrchestratorStatusTest do
 
   test "status dashboard renders a throttled badge when rate_limit_info.status is not allowed" do
     row =
-      StatusDashboard.format_running_summary_for_test(%{
+      Renderer.format_running_summary_for_test(%{
         identifier: "MT-910",
         state: "running",
         session_id: "thread-1234567890",
@@ -1149,7 +1144,7 @@ defmodule Core.OrchestratorStatusTest do
 
   test "status dashboard omits the rate limit badge when status is allowed" do
     row =
-      StatusDashboard.format_running_summary_for_test(%{
+      Renderer.format_running_summary_for_test(%{
         identifier: "MT-911",
         state: "running",
         session_id: "thread-1234567890",
@@ -1177,7 +1172,7 @@ defmodule Core.OrchestratorStatusTest do
         " after\nline"
 
     row =
-      StatusDashboard.format_running_summary_for_test(
+      Renderer.format_running_summary_for_test(
         %{
           identifier: "MT-898",
           state: "running",
@@ -1202,7 +1197,7 @@ defmodule Core.OrchestratorStatusTest do
     terminal_columns = 140
 
     row =
-      StatusDashboard.format_running_summary_for_test(
+      Renderer.format_running_summary_for_test(
         %{
           identifier: "MT-598",
           state: "running",

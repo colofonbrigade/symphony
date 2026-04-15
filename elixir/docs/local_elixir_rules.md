@@ -7,7 +7,7 @@ this file wins locally; consider whether the divergence should be upstreamed.
 ## Boundaries in this repo
 
 - `Core` — Orchestrator, agent runner, workspace management, telemetry, workflow loader, status
-  dashboard. The domain core.
+  dashboard *coordinator* (the GenServer; rendering lives in `CLI`). The domain core.
 - `Web` — Phoenix endpoint, LiveView dashboard, JSON observability API. Depends on `Core` +
   `Schema`.
 - `Schema` — Shared structs used across boundaries (`Schema.Snapshot`, `Schema.Tracker.Issue`).
@@ -24,4 +24,8 @@ this file wins locally; consider whether the divergence should be upstreamed.
   no in-app deps.
 - `Permissions` — Security-sensitive pure utilities. Today: `Permissions.PathSafety` (path
   traversal / symlink-escape guards). Leaf: no state, no config, no in-app deps.
+- `CLI` — Pure terminal-UI rendering. `CLI.StatusDashboard` formats an orchestrator snapshot +
+  context map into an ANSI string; `Core.StatusDashboard` composes Config reads, builds the
+  context, and writes the result to stdout. Future home for alternate renderers (JSON, minimal)
+  or non-dashboard CLI output. Depends on `Schema`; depended on by `Core`.
 

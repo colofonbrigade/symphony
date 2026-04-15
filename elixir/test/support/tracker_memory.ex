@@ -8,6 +8,7 @@ defmodule Test.Tracker.Memory do
   issue list from `:memory_tracker_issues` in Application env.
   """
 
+  use Boundary, deps: [Linear, Schema]
   @behaviour Linear.Tracker
 
   alias Schema.Tracker.Issue

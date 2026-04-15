@@ -246,7 +246,7 @@ defmodule Core.LiveE2ETest do
   defp issue_has_comment?(_issue, _expected_body), do: false
 
   defp update_entity(mutation, variables, mutation_name, entity_name) do
-    case Client.graphql(mutation, variables) do
+    case Client.graphql(tracker_settings(), mutation, variables) do
       {:ok, %{"data" => %{^mutation_name => %{"success" => true}}}} ->
         :ok
 
@@ -264,8 +264,20 @@ defmodule Core.LiveE2ETest do
     end
   end
 
+  defp tracker_settings do
+    tracker = Core.Config.settings!().tracker
+
+    %{
+      api_key: tracker.api_key,
+      endpoint: tracker.endpoint,
+      project_slug: tracker.project_slug,
+      active_states: tracker.active_states,
+      assignee: tracker.assignee
+    }
+  end
+
   defp graphql_data!(query, variables) when is_binary(query) and is_map(variables) do
-    case Client.graphql(query, variables) do
+    case Client.graphql(tracker_settings(), query, variables) do
       {:ok, %{"data" => data, "errors" => errors}} when is_map(data) and is_list(errors) ->
         flunk("Linear GraphQL returned partial errors: #{inspect(errors)}")
 
